@@ -1,0 +1,146 @@
+.awb-print {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 1.5rem;
+  background: #fff;
+  color: #111;
+}
+
+.awb-print__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid #111;
+}
+
+.awb-print__eyebrow {
+  margin: 0 0 0.35rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.awb-print__awb {
+  margin: 0;
+  font-size: 2rem;
+  letter-spacing: 0.04em;
+}
+
+.awb-print__meta {
+  margin: 0.25rem 0 0;
+  font-size: 0.92rem;
+}
+
+.awb-print__service {
+  text-align: right;
+  font-size: 0.95rem;
+}
+
+.awb-print__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.awb-print__card {
+  border: 1px solid #d4d4d8;
+  border-radius: 10px;
+  padding: 1rem;
+}
+
+.awb-print__card h2 {
+  margin: 0 0 0.65rem;
+  font-size: 1rem;
+}
+
+.awb-print__card p {
+  margin: 0.2rem 0;
+}
+
+.awb-print__card--wide {
+  margin-top: 0.25rem;
+}
+
+.awb-print__notes {
+  margin-top: 0.5rem;
+}
+
+.awb-print__items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.awb-print__items li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid #ececf0;
+}
+
+.awb-print__total {
+  margin: 0.85rem 0 0;
+  font-size: 1rem;
+}
+
+.awb-print-host {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  overflow: auto;
+  background: rgba(8, 6, 13, 0.72);
+  padding: 1.5rem;
+}
+
+.awb-print-host__toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  max-width: 900px;
+  margin: 0 auto 0.75rem;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .awb-print-host,
+  .awb-print-host * {
+    visibility: visible;
+  }
+
+  .awb-print-host {
+    position: static;
+    inset: auto;
+    overflow: visible;
+    background: transparent;
+    padding: 0;
+  }
+
+  .awb-print-host__toolbar {
+    display: none;
+  }
+
+  .awb-print {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .awb-print__header,
+  .awb-print__grid {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .awb-print__service {
+    text-align: left;
+  }
+}

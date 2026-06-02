@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /checkout
+Disallow: /cos
+Disallow: /comanda/
+Disallow: /comenzile-mele
+Disallow: /conectare
+Disallow: /inregistrare
+Disallow: /gestiune
+
+Sitemap: https://shop-top.ro/api/sitemap.php
