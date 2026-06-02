@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/lib.php';
+require_once __DIR__ . '/baselinker.php';
 
 shoptop_send_cors();
 
@@ -17,7 +18,8 @@ $pdo = shoptop_pdo();
 if ($method === 'GET') {
     $isAdmin = shoptop_is_admin_user();
     $stmt = $pdo->query(
-        'SELECT id, name, slug, category, sku, supplier_price_a, supplier_price_b, cost_supplier,
+        'SELECT id, name, slug, category, sku, ean, brand, google_category, mpn,
+                supplier_price_a, supplier_price_b, cost_supplier,
                 sale_price, discount_percent, stock_qty, image_urls, description, market_observations, notes
          FROM products
          ORDER BY name ASC'
@@ -48,6 +50,7 @@ if ($method === 'POST') {
         throw $e;
     }
 
+    shoptop_baselinker_sync_product($pdo, $product);
     shoptop_json_response(shoptop_row_to_product($product), 201);
 }
 
@@ -64,6 +67,7 @@ if ($method === 'PUT') {
         shoptop_json_error('Produsul nu a fost gasit.', 404);
     }
 
+    shoptop_baselinker_sync_product($pdo, $product);
     shoptop_json_response(shoptop_row_to_product($product));
 }
 

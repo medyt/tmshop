@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { ShopLayout } from '../components/shop/ShopLayout'
 import { useAuth } from '../contexts/AuthContext'
 import { usePageMeta } from '../hooks/usePageMeta'
+import { trackPurchase } from '../lib/analytics'
 import {
   readOrderAccessToken,
   saveOrderAccessToken,
@@ -74,6 +75,21 @@ export function OrderSuccessPage() {
     }
   }, [initialOrder, orderId])
 
+  // Plata cu cardul: evenimentul Purchase se trimite aici, la revenirea pe pagina
+  // comenzii confirmate (plata ramburs e deja urmărită la checkout).
+  const purchaseTracked = useRef(false)
+  useEffect(() => {
+    if (purchaseTracked.current) return
+    if (
+      order &&
+      order.paymentMethod === 'card' &&
+      order.paymentStatus === 'paid'
+    ) {
+      purchaseTracked.current = true
+      trackPurchase(order.id, order.totalAmount)
+    }
+  }, [order])
+
   const itemsSubtotal = order
     ? order.items.reduce((sum, item) => sum + item.lineTotal, 0)
     : 0
@@ -116,6 +132,21 @@ export function OrderSuccessPage() {
             <p className="shop-order__status muted">
               Status: <strong>{orderStatusLabel(order.status)}</strong>
             </p>
+            {order.paymentMethod ? (
+              <p className="shop-order__status muted">
+                Plată:{' '}
+                <strong>
+                  {order.paymentMethod === 'card'
+                    ? 'Card online'
+                    : 'Ramburs la livrare'}
+                </strong>
+                {order.paymentMethod === 'card'
+                  ? order.paymentStatus === 'paid'
+                    ? ' — plătită'
+                    : ' — în așteptarea confirmării'
+                  : null}
+              </p>
+            ) : null}
             {order.awbNumber ? (
               <p className="shop-order__status">
                 AWB urmărire: <strong>{order.awbNumber}</strong>

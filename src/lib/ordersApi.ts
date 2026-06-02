@@ -116,6 +116,12 @@ function parseOrder(value: unknown): Order | null {
   if (typeof record.customerNotes === 'string' && record.customerNotes.trim()) {
     order.customerNotes = record.customerNotes.trim()
   }
+  if (record.paymentMethod === 'cod' || record.paymentMethod === 'card') {
+    order.paymentMethod = record.paymentMethod
+  }
+  if (record.paymentStatus === 'pending' || record.paymentStatus === 'paid') {
+    order.paymentStatus = record.paymentStatus
+  }
   if (record.deliveryCarrier === 'fan-courier' || record.deliveryCarrier === 'dpd') {
     order.deliveryCarrier = record.deliveryCarrier
   } else {
@@ -179,6 +185,31 @@ export async function createOrder(payload: CheckoutPayload): Promise<Order> {
     throw new Error('Raspuns invalid de la server.')
   }
   return order
+}
+
+/**
+ * Initiaza o plata cu cardul prin Netopia si returneaza URL-ul de redirect.
+ */
+export async function startCardPayment(
+  orderId: string,
+  accessToken?: string | null,
+): Promise<string> {
+  const res = await apiFetch(
+    '/payment_netopia_start.php',
+    {
+      method: 'POST',
+      body: JSON.stringify({ orderId, token: accessToken ?? '' }),
+    },
+    { credentials: 'include' },
+  )
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res))
+  }
+  const data = (await res.json()) as { paymentUrl?: unknown }
+  if (typeof data.paymentUrl !== 'string' || !data.paymentUrl.trim()) {
+    throw new Error('Nu am primit linkul de plata.')
+  }
+  return data.paymentUrl
 }
 
 export async function fetchOrders(): Promise<Order[]> {

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Link, Navigate, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 
 import { ProductImage } from '../../components/ProductImage'
 import { ShopLayout } from '../../components/shop/ShopLayout'
+import { NotFoundPage } from './NotFoundPage'
 import { ShopProductPrice } from '../../components/shop/ShopProductPrice'
 import {
   ShopStarRating,
@@ -12,10 +13,11 @@ import { useShopNotice } from '../../components/shop/ShopNoticeProvider'
 import { useCart } from '../../contexts/CartContext'
 import { getShopProductPageContent } from '../../data/shopProductContent'
 import { usePageMeta } from '../../hooks/usePageMeta'
-import { trackAddToCart } from '../../lib/analytics'
+import { trackAddToCart, trackViewContent } from '../../lib/analytics'
 import { primaryImageUrl, normalizeImageUrl } from '../../lib/productImages'
 import { findListedProduct, productPagePath } from '../../lib/shopProductRoutes'
 import { availableStock, isListedInShop } from '../../lib/shopCatalog'
+import { isApiEnabled } from '../../lib/apiClient'
 import {
   fetchProductReviews,
   relatedProducts,
@@ -124,16 +126,25 @@ export function ProductPage({ products }: ProductPageProps) {
     }
   }, [listedProduct])
 
-  if (!product) {
-    return <Navigate to="/" replace />
-  }
+  useEffect(() => {
+    if (!listedProduct) return
+    trackViewContent(listedProduct.id, listedProduct.salePrice)
+  }, [listedProduct])
 
-  if (!isListedInShop(product)) {
-    return <Navigate to="/" replace />
-  }
-
-  if (!productContent) {
-    return <Navigate to="/" replace />
+  if (!product || !isListedInShop(product) || !productContent) {
+    // Produsele se încarcă asincron din API; nu arăta 404 până nu avem catalogul.
+    if (products.length === 0) {
+      return (
+        <ShopLayout>
+          <section className="shop-page">
+            <p className="muted" role="status">
+              Se încarcă produsul…
+            </p>
+          </section>
+        </ShopLayout>
+      )
+    }
+    return <NotFoundPage />
   }
 
   const content = productContent
@@ -151,13 +162,19 @@ export function ProductPage({ products }: ProductPageProps) {
 
   const handleAddToCart = () => {
     addProduct(product)
-    trackAddToCart(product.id, 1)
+    trackAddToCart(product.id, 1, product.salePrice)
     notify(`${product.name || 'Produsul'} a fost adăugat în coș.`, 'Adăugat în coș')
   }
 
   const handleReviewSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setReviewMessage(null)
+    if (!isApiEnabled()) {
+      setReviewMessage(
+        'API-ul nu este configurat (VITE_API_URL). La dezvoltare locală setează în .env de exemplu VITE_API_URL=/shoptop-api și pornește PHP pe același host ca proxy-ul Vite.',
+      )
+      return
+    }
     try {
       await submitProductReview({
         productId: product.id,

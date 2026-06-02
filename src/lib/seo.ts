@@ -2,6 +2,13 @@ import { SITE_LEGAL } from './siteLegal'
 
 const META_DESCRIPTION_MAX = 160
 
+/**
+ * Imagine implicită pentru partajarea pe rețele sociale (Open Graph / Twitter).
+ * Recomandat: înlocuiește cu un PNG/JPG 1200x630 (`/og-cover.png`) pentru
+ * compatibilitate maximă cu toate platformele și actualizează această cale.
+ */
+export const DEFAULT_OG_IMAGE_PATH = '/og-cover.svg'
+
 export function truncateMetaDescription(value: string, max = META_DESCRIPTION_MAX): string {
   const normalized = value.replace(/\s+/g, ' ').trim()
   if (normalized.length <= max) return normalized
@@ -47,7 +54,9 @@ export function buildOrganizationJsonLd() {
     name: SITE_LEGAL.operatorName,
     url: SITE_LEGAL.siteUrl,
     email: SITE_LEGAL.contactEmail,
-    telephone: SITE_LEGAL.contactPhone,
+    ...(SITE_LEGAL.contactPhone
+      ? { telephone: SITE_LEGAL.contactPhone }
+      : {}),
     address: {
       '@type': 'PostalAddress',
       streetAddress: SITE_LEGAL.operatorAddress,

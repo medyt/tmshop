@@ -42,12 +42,13 @@ export function AdminLoginPage() {
   }
 
   return (
+    <div className="admin-theme">
     <div className="app admin-auth">
       <header className="app-header">
         <div className="app-header__titles">
-          <h1>Admin Shoptop</h1>
+          <h1>Admin ShopTop</h1>
           <p className="gestiune-subnav muted">
-            <Link to="/">← Înapoi la magazin</Link>
+            <Link to="/">← Înapoi la site</Link>
           </p>
         </div>
       </header>
@@ -92,6 +93,7 @@ export function AdminLoginPage() {
           </form>
         </section>
       </main>
+    </div>
     </div>
   )
 }

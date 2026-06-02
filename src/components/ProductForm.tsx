@@ -32,6 +32,10 @@ function draftFromMode(mode: Mode): Omit<Product, 'id'> {
     return {
       name: p.name,
       sku: p.sku ?? '',
+      ean: p.ean ?? '',
+      brand: p.brand ?? '',
+      googleCategory: p.googleCategory ?? '',
+      mpn: p.mpn ?? '',
       supplierPriceA: p.supplierPriceA,
       supplierPriceB: p.supplierPriceB,
       costSupplier: p.costSupplier,
@@ -64,6 +68,10 @@ function normalizeProductDraft(
     id,
     name: draft.name.trim() || 'Fără nume',
     sku: draft.sku?.trim() || undefined,
+    ean: draft.ean?.trim() || undefined,
+    brand: draft.brand?.trim() || undefined,
+    googleCategory: draft.googleCategory?.trim() || undefined,
+    mpn: draft.mpn?.trim() || undefined,
     supplierPriceA: Number.isFinite(draft.supplierPriceA)
       ? draft.supplierPriceA
       : 0,
@@ -332,6 +340,65 @@ export function ProductForm({
           autoComplete="off"
         />
       </label>
+
+      <fieldset className="fieldset">
+        <legend>Atribute feed (Google / Meta / TikTok)</legend>
+        <p className="hint muted">
+          Recomandate pentru feed-urile de produse. EAN sau (brand + MPN) ajută
+          la aprobarea în Google Merchant / catalogul Meta.
+        </p>
+        <div className="field-row">
+          <label className="field">
+            <span>EAN / cod de bare</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={draft.ean}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, ean: e.target.value }))
+              }
+              autoComplete="off"
+              placeholder="ex. 5901234123457"
+            />
+          </label>
+          <label className="field">
+            <span>Brand</span>
+            <input
+              type="text"
+              value={draft.brand}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, brand: e.target.value }))
+              }
+              autoComplete="off"
+            />
+          </label>
+        </div>
+        <div className="field-row">
+          <label className="field">
+            <span>MPN (cod producător)</span>
+            <input
+              type="text"
+              value={draft.mpn}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, mpn: e.target.value }))
+              }
+              autoComplete="off"
+            />
+          </label>
+          <label className="field">
+            <span>Categorie Google</span>
+            <input
+              type="text"
+              value={draft.googleCategory}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, googleCategory: e.target.value }))
+              }
+              autoComplete="off"
+              placeholder="ex. 672 sau Home & Garden > Kitchen"
+            />
+          </label>
+        </div>
+      </fieldset>
 
       <label className="field">
         <span>Descriere (catalog intern)</span>

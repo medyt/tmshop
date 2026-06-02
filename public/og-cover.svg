@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" fill="none">
+  <rect width="1200" height="630" fill="#F4F6F5"/>
+  <rect width="1200" height="630" fill="url(#grad)"/>
+  <g transform="translate(120, 250)">
+    <text x="0" y="0" font-family="Arial, Helvetica, sans-serif" font-size="92" font-weight="800" letter-spacing="-3" fill="#0F172A">Shop<tspan fill="#008060">Top</tspan></text>
+    <text x="4" y="70" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="500" fill="#475569">Magazin online · livrare în România</text>
+    <text x="4" y="125" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="400" fill="#64748B">Produse în stoc · Fan Courier sau DPD · plat la livrare</text>
+  </g>
+  <defs>
+    <linearGradient id="grad" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E6F2EE"/>
+    </linearGradient>
+  </defs>
+</svg>

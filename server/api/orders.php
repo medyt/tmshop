@@ -3,8 +3,30 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/lib.php';
+require_once __DIR__ . '/baselinker.php';
+
+/** Linie virtuală opțională la checkout; nu există în `products`, nu se scade stoc. */
+const SHOPTOP_GIFT_ADDON_PRODUCT_ID = 'shoptop-gift-addon';
+const SHOPTOP_GIFT_ADDON_PRICE = 15.0;
 
 shoptop_send_cors();
+
+/**
+ * Trimite comanda in BaseLinker si salveaza order_id-ul intors (best-effort).
+ */
+function shoptop_push_order_to_baselinker(PDO $pdo, array $order): void
+{
+    if (!shoptop_baselinker_enabled() || !empty($order['baselinkerOrderId'])) {
+        return;
+    }
+    $blOrderId = shoptop_baselinker_push_order($order);
+    if ($blOrderId !== null) {
+        $stmt = $pdo->prepare(
+            'UPDATE orders SET baselinker_order_id = :bl WHERE id = :id'
+        );
+        $stmt->execute(['bl' => $blOrderId, 'id' => (string) $order['id']]);
+    }
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(204);
@@ -59,9 +81,15 @@ function shoptop_order_row_to_response(array $order, array $items, bool $include
         'customerAddress' => (string) $order['customer_address'],
         'totalAmount' => (float) $order['total_amount'],
         'status' => shoptop_order_status_label((string) ($order['status'] ?? 'new')),
+        'paymentMethod' => (string) ($order['payment_method'] ?? 'cod'),
+        'paymentStatus' => (string) ($order['payment_status'] ?? 'pending'),
         'createdAt' => (string) $order['created_at'],
         'items' => [],
     ];
+
+    if (!empty($order['baselinker_order_id'])) {
+        $payload['baselinkerOrderId'] = (string) $order['baselinker_order_id'];
+    }
 
     if (!empty($order['customer_email'])) {
         $payload['customerEmail'] = (string) $order['customer_email'];
@@ -106,7 +134,7 @@ function shoptop_fetch_order(PDO $pdo, string $orderId): ?array
 {
     $stmt = $pdo->prepare(
         'SELECT id, access_token, user_id, customer_name, customer_email, customer_phone, customer_address,
-                customer_notes, total_amount, status, awb_number, awb_issued_at, created_at
+                customer_notes, total_amount, status, payment_method, payment_status, payment_ref, baselinker_order_id, awb_number, awb_issued_at, created_at
          FROM orders
          WHERE id = :id
          LIMIT 1'
@@ -165,7 +193,7 @@ function shoptop_issue_awb(PDO $pdo, string $orderId): array
     try {
         $stmt = $pdo->prepare(
             'SELECT id, access_token, user_id, customer_name, customer_email, customer_phone, customer_address,
-                    customer_notes, total_amount, status, awb_number, awb_issued_at, created_at
+                    customer_notes, total_amount, status, payment_method, payment_status, payment_ref, baselinker_order_id, awb_number, awb_issued_at, created_at
              FROM orders
              WHERE id = :id
              LIMIT 1
@@ -178,6 +206,7 @@ function shoptop_issue_awb(PDO $pdo, string $orderId): array
             shoptop_json_error('Comanda nu a fost gasita.', 404);
         }
 
+        $newlyIssued = false;
         if (empty($order['awb_number'])) {
             $awbNumber = shoptop_next_awb_number($pdo);
             $updateStmt = $pdo->prepare(
@@ -193,6 +222,7 @@ function shoptop_issue_awb(PDO $pdo, string $orderId): array
                 'shipped' => 'shipped',
                 'id' => $orderId,
             ]);
+            $newlyIssued = (string) ($order['status'] ?? 'new') !== 'delivered';
         }
 
         $pdo->commit();
@@ -204,6 +234,10 @@ function shoptop_issue_awb(PDO $pdo, string $orderId): array
     $order = shoptop_fetch_order($pdo, $orderId);
     if ($order === null) {
         shoptop_json_error('Comanda nu a putut fi citita dupa emiterea AWB.', 500);
+    }
+
+    if ($newlyIssued) {
+        shoptop_send_order_status_email($order, 'shipped');
     }
 
     return $order;
@@ -230,6 +264,9 @@ function shoptop_order_apply_stock(PDO $pdo, string $orderId): void
         $productStmt->execute(['id' => $item['product_id']]);
         $product = $productStmt->fetch();
         if (!$product) {
+            if ($item['product_id'] === SHOPTOP_GIFT_ADDON_PRODUCT_ID) {
+                continue;
+            }
             shoptop_json_error('Un produs din comanda nu mai exista.', 409);
         }
 
@@ -273,6 +310,9 @@ function shoptop_order_restore_stock(PDO $pdo, string $orderId): void
         $productStmt->execute(['id' => $item['product_id']]);
         $product = $productStmt->fetch();
         if (!$product) {
+            if ($item['product_id'] === SHOPTOP_GIFT_ADDON_PRODUCT_ID) {
+                continue;
+            }
             shoptop_json_error('Un produs din comanda nu mai exista.', 409);
         }
 
@@ -350,6 +390,10 @@ function shoptop_update_order_status(PDO $pdo, string $orderId, string $status):
         shoptop_json_error('Comanda nu a putut fi citita.', 500);
     }
 
+    if ($status !== $currentStatus) {
+        shoptop_send_order_status_email($order, $status);
+    }
+
     return $order;
 }
 
@@ -370,7 +414,7 @@ if ($method === 'GET') {
         $email = shoptop_normalize_email((string) ($currentUser['email'] ?? ''));
         $ordersStmt = $pdo->prepare(
             'SELECT id, access_token, user_id, customer_name, customer_email, customer_phone, customer_address,
-                    customer_notes, total_amount, status, awb_number, awb_issued_at, created_at
+                    customer_notes, total_amount, status, payment_method, payment_status, payment_ref, baselinker_order_id, awb_number, awb_issued_at, created_at
              FROM orders
              WHERE user_id = :user_id
                 OR (
@@ -403,7 +447,7 @@ if ($method === 'GET') {
     if (is_string($orderId) && trim($orderId) !== '') {
         $stmt = $pdo->prepare(
             'SELECT id, access_token, user_id, customer_name, customer_email, customer_phone, customer_address,
-                    customer_notes, total_amount, status, awb_number, awb_issued_at, created_at
+                    customer_notes, total_amount, status, payment_method, payment_status, payment_ref, baselinker_order_id, awb_number, awb_issued_at, created_at
              FROM orders
              WHERE id = :id
              LIMIT 1'
@@ -433,7 +477,7 @@ if ($method === 'GET') {
 
     $ordersStmt = $pdo->query(
         'SELECT id, access_token, user_id, customer_name, customer_email, customer_phone, customer_address,
-                customer_notes, total_amount, status, awb_number, awb_issued_at, created_at
+                customer_notes, total_amount, status, payment_method, payment_status, payment_ref, baselinker_order_id, awb_number, awb_issued_at, created_at
          FROM orders
          ORDER BY created_at DESC
          LIMIT 100'
@@ -495,6 +539,11 @@ if ($method === 'POST') {
 
     if (!in_array($deliveryCarrier, ['fan-courier', 'dpd'], true)) {
         shoptop_json_error('Alege curierul pentru livrare.', 400);
+    }
+
+    $paymentMethod = trim((string) ($body['paymentMethod'] ?? 'cod'));
+    if (!in_array($paymentMethod, ['cod', 'card'], true)) {
+        $paymentMethod = 'cod';
     }
 
     $carrierLabel = $deliveryCarrier === 'dpd' ? 'DPD' : 'Fan Courier';
@@ -571,6 +620,20 @@ if ($method === 'POST') {
             ];
         }
 
+        $giftAddon = array_key_exists('giftAddon', $body) && $body['giftAddon'] === true;
+        if ($giftAddon) {
+            $lineGift = round(SHOPTOP_GIFT_ADDON_PRICE, 2);
+            $totalAmount += $lineGift;
+            $preparedItems[] = [
+                'product_id' => SHOPTOP_GIFT_ADDON_PRODUCT_ID,
+                'product_name' => 'Produs surpriza',
+                'product_sku' => null,
+                'unit_price' => SHOPTOP_GIFT_ADDON_PRICE,
+                'quantity' => 1,
+                'line_total' => $lineGift,
+            ];
+        }
+
         $totalAmount += shoptop_shipping_flat_rate();
 
         $orderId = shoptop_order_id();
@@ -578,10 +641,10 @@ if ($method === 'POST') {
         $orderStmt = $pdo->prepare(
             'INSERT INTO orders (
                 id, access_token, user_id, customer_name, customer_email, customer_phone,
-                customer_address, customer_notes, total_amount, status
+                customer_address, customer_notes, total_amount, status, payment_method, payment_status
             ) VALUES (
                 :id, :access_token, :user_id, :customer_name, :customer_email, :customer_phone,
-                :customer_address, :customer_notes, :total_amount, :status
+                :customer_address, :customer_notes, :total_amount, :status, :payment_method, :payment_status
             )'
         );
         $orderStmt->execute([
@@ -595,6 +658,8 @@ if ($method === 'POST') {
             'customer_notes' => $customerNotes !== '' ? $customerNotes : null,
             'total_amount' => round($totalAmount, 2),
             'status' => 'new',
+            'payment_method' => $paymentMethod,
+            'payment_status' => 'pending',
         ]);
 
         $itemStmt = $pdo->prepare(
@@ -632,6 +697,13 @@ if ($method === 'POST') {
 
     $order['accessToken'] = $accessToken;
     shoptop_send_order_confirmation_email($order);
+
+    // Comenzile cu plata la livrare merg imediat in BaseLinker.
+    // Cele cu card se trimit dupa confirmarea platii (IPN Netopia).
+    if ($paymentMethod === 'cod') {
+        shoptop_push_order_to_baselinker($pdo, $order);
+    }
+
     shoptop_json_response($order, 201);
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) {

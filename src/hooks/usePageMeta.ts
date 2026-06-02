@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { pageUrl } from '../lib/seo'
+import { DEFAULT_OG_IMAGE_PATH, pageUrl } from '../lib/seo'
 
 export type PageMeta = {
   title: string
@@ -106,13 +106,10 @@ export function usePageMeta({
       upsertOg('og:url', canonical)
     }
 
-    if (image) {
-      upsertOg('og:image', image)
-      upsertTwitter('twitter:card', 'summary_large_image')
-      upsertTwitter('twitter:image', image)
-    } else {
-      upsertTwitter('twitter:card', 'summary')
-    }
+    const ogImage = image ?? pageUrl(DEFAULT_OG_IMAGE_PATH)
+    upsertOg('og:image', ogImage)
+    upsertTwitter('twitter:card', 'summary_large_image')
+    upsertTwitter('twitter:image', ogImage)
 
     if (robots) {
       upsertMeta('robots', robots)

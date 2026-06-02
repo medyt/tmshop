@@ -1,3 +1,29 @@
+/* ===== Temă admin: mereu deschisă (fundal alb), accent verde brand ===== */
+.admin-theme {
+  color-scheme: light;
+  --text: #4b5563;
+  --text-h: #0f172a;
+  --bg: #ffffff;
+  --border: #e3e6ea;
+  --code-bg: #f4f5f7;
+  --accent: #008060;
+  --accent-bg: rgba(0, 128, 96, 0.1);
+  --accent-border: rgba(0, 128, 96, 0.45);
+  --panel-bg: #ffffff;
+  --table-head-bg: #f6f7f9;
+  --row-selected: rgba(0, 128, 96, 0.08);
+  --btn-bg: #f7f8fa;
+  --muted: #6b7280;
+  --shadow:
+    rgba(16, 24, 40, 0.08) 0 8px 20px -6px, rgba(16, 24, 40, 0.04) 0 2px 6px -2px;
+  min-height: 100vh;
+  width: 100%;
+  background:
+    radial-gradient(1200px 320px at 50% -120px, rgba(0, 128, 96, 0.06), transparent 70%),
+    #f3f5f8;
+  color: var(--text);
+}
+
 .app {
   text-align: left;
   padding: 0.65rem 0.75rem 1.25rem;
@@ -40,6 +66,96 @@
   margin-bottom: 0.75rem;
   padding-bottom: 0.65rem;
   border-bottom: 1px solid var(--border);
+}
+
+/* ===== Topbar admin ===== */
+.admin-topbar {
+  margin-bottom: 1.1rem;
+}
+
+.admin-topbar__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0.9rem;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+}
+
+.admin-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  text-decoration: none;
+}
+
+.admin-brand__mark {
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--text-h);
+}
+
+.admin-brand__mark span {
+  color: var(--accent);
+}
+
+.admin-brand__tag {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+}
+
+.admin-topbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.admin-topbar__head {
+  padding: 1rem 0.25rem 0;
+}
+
+.admin-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-bottom: 0.3rem;
+}
+
+.admin-breadcrumb a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.admin-breadcrumb a:hover {
+  text-decoration: underline;
+}
+
+.admin-topbar__title {
+  margin: 0;
+  font-size: 1.6rem;
+  letter-spacing: -0.025em;
+  color: var(--text-h);
+}
+
+.admin-topbar__lead {
+  margin: 0.3rem 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
 }
 
 .app-header__titles h1 {
@@ -254,6 +370,210 @@
 
 .btn.danger:hover {
   border-color: #dc2626;
+}
+
+.admin-reviews__toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--table-head-bg);
+}
+
+.admin-reviews__count {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.admin-reviews__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0;
+}
+
+.admin-reviews__tab--active {
+  border-color: var(--accent-border);
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+}
+
+.admin-reviews__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.admin-reviews__row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  justify-content: flex-end;
+}
+
+.cell-stars {
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: #ca8a04;
+  font-size: 0.9rem;
+}
+
+.review-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.review-badge--pending {
+  color: #b45309;
+  background: #fef3c7;
+  border-color: #fde68a;
+}
+
+.review-badge--approved {
+  color: #047857;
+  background: #dcfce7;
+  border-color: #bbf7d0;
+}
+
+.data-table--reviews .review-table__preview {
+  display: block;
+  max-width: min(22rem, 36vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-table--reviews td:last-child {
+  text-align: right;
+}
+
+.review-card {
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--btn-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  text-align: left;
+}
+
+.review-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.review-card__rating {
+  font-size: 0.95rem;
+}
+
+/* ===== Admin retururi (badge + tabel) ===== */
+.return-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.return-badge--nou {
+  color: #1d4ed8;
+  background: #eff4ff;
+  border-color: #c7d7fe;
+}
+
+.return-badge--aprobat {
+  color: #047857;
+  background: #dcfce7;
+  border-color: #bbf7d0;
+}
+
+.return-badge--respins {
+  color: #b91c1c;
+  background: #fee2e2;
+  border-color: #fecaca;
+}
+
+.return-badge--finalizat {
+  color: #6d28d9;
+  background: #f3e8ff;
+  border-color: #e9d5ff;
+}
+
+.data-table--returns .return-table__preview {
+  display: block;
+  max-width: min(18rem, 32vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-table--returns td:last-child {
+  text-align: right;
+}
+
+.data-table--returns a.cell-order-id {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.data-table--returns a.cell-order-id:hover {
+  text-decoration: underline;
+}
+
+.return-table__cell-customer .cell-sku {
+  display: block;
+}
+
+.return-card {
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--btn-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  text-align: left;
+}
+
+.return-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.return-card .admin-reviews__row-actions {
+  justify-content: flex-start;
+}
+
+.return-card a.cell-order-id {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.return-card a.cell-order-id:hover {
+  text-decoration: underline;
 }
 
 .muted {
@@ -892,6 +1212,228 @@
 
 .orders-panel {
   margin-top: 0.75rem;
+}
+
+/* ===== Buton mic + toolbar count ===== */
+.btn--sm {
+  padding: 0.3rem 0.7rem;
+  font-size: 0.85rem;
+  border-radius: 7px;
+}
+
+.table-toolbar__count {
+  margin-left: auto;
+  font-size: 0.85rem;
+}
+
+.cell-nowrap {
+  white-space: nowrap;
+}
+
+.cell-order-id {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--text-h);
+}
+
+.th-actions {
+  text-align: right;
+}
+
+.data-table--orders td:last-child {
+  text-align: right;
+}
+
+/* ===== Badge status comandă ===== */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.status-badge::before {
+  content: '';
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.status-badge--new {
+  color: #1d4ed8;
+  background: #eff4ff;
+  border-color: #c7d7fe;
+}
+
+.status-badge--confirmed {
+  color: #0369a1;
+  background: #e0f2fe;
+  border-color: #bae6fd;
+}
+
+.status-badge--processing {
+  color: #b45309;
+  background: #fef3c7;
+  border-color: #fde68a;
+}
+
+.status-badge--shipped {
+  color: #6d28d9;
+  background: #f3e8ff;
+  border-color: #e9d5ff;
+}
+
+.status-badge--delivered {
+  color: #047857;
+  background: #dcfce7;
+  border-color: #bbf7d0;
+}
+
+.status-badge--cancelled {
+  color: #b91c1c;
+  background: #fee2e2;
+  border-color: #fecaca;
+}
+
+/* ===== Modal editare comandă ===== */
+.order-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.order-card__total {
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.order-edit__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 0.85rem;
+}
+
+@media (max-width: 640px) {
+  .order-edit__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.order-edit__card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.85rem 0.95rem;
+  background: var(--table-head-bg);
+}
+
+.order-edit__card h3 {
+  margin: 0 0 0.6rem;
+  font-size: 0.95rem;
+  color: var(--text-h);
+}
+
+.order-edit__status-row {
+  margin-bottom: 0.6rem;
+}
+
+.order-edit__awb {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  align-items: flex-start;
+}
+
+.order-edit__ok {
+  margin: 0.6rem 0 0;
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  color: var(--text-h);
+  font-size: 0.85rem;
+}
+
+.order-edit__dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.3rem 0.75rem;
+  font-size: 0.9rem;
+}
+
+.order-edit__dl dt {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.order-edit__dl dd {
+  margin: 0;
+  color: var(--text-h);
+}
+
+.order-edit__products {
+  background: var(--panel-bg);
+}
+
+.order-edit__products .data-table {
+  font-size: 0.88rem;
+}
+
+.order-edit__total-label {
+  text-align: right;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* ===== AWB: toolbar selecție ===== */
+.awb-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--table-head-bg);
+}
+
+.awb-toolbar__info {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.awb-toolbar__info strong {
+  color: var(--text-h);
+}
+
+.awb-toolbar__progress {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.th-check {
+  width: 2.5rem;
+  text-align: center;
+}
+
+.th-check input[type='checkbox'] {
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
 .admin-menu {

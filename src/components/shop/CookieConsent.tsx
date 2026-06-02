@@ -5,6 +5,7 @@ import {
   acceptEssentialCookies,
   hasCookieConsent,
 } from '../../lib/cookieConsent'
+import { initTracking } from '../../lib/analytics'
 import { SHOP_INFO_ROUTES } from '../../lib/siteLegal'
 
 export function CookieConsent() {
@@ -20,8 +21,9 @@ export function CookieConsent() {
     <div className="cookie-banner" role="dialog" aria-label="Preferințe cookie">
       <div className="cookie-banner__inner">
         <p className="cookie-banner__text">
-          Folosim cookie-uri și stocare locală pentru funcționarea coșului,
-          autentificare și salvarea preferinței tale. Citește{' '}
+          Folosim cookie-uri esențiale pentru coș, autentificare și salvarea
+          preferinței tale. Cu „Accept toate” activăm și cookie-uri de marketing
+          (Meta Pixel, TikTok Pixel) pentru măsurarea reclamelor. Citește{' '}
           <Link to={SHOP_INFO_ROUTES.cookies}>politica cookie</Link>.
         </p>
         <div className="cookie-banner__actions">
@@ -40,6 +42,7 @@ export function CookieConsent() {
             className="shop-btn shop-btn--primary"
             onClick={() => {
               acceptAllCookies()
+              initTracking()
               setVisible(false)
             }}
           >

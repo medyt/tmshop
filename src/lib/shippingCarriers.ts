@@ -16,9 +16,7 @@ export const DELIVERY_CARRIERS: DeliveryCarrier[] = [
   {
     id: 'dpd',
     name: 'DPD',
-    logoSrc: '/images/carriers/dpd.png',
-    logoFallbackSrc:
-      'https://www.dpd.ro/wp-content/themes/DPD_NoLogin/images/DPD_logo_redgrad_rgb.png',
+    logoSrc: '/images/carriers/dpd.svg',
   },
 ]
 

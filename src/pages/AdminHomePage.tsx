@@ -20,6 +20,18 @@ const adminSections = [
     description:
       'Generează automat AWB pentru fiecare comandă și deschide fișa gata de printat.',
   },
+  {
+    to: '/admin/recenzii',
+    title: 'Recenzii',
+    description:
+      'Aprobă sau respinge recenziile trimise de clienți înainte să apară pe site.',
+  },
+  {
+    to: '/admin/retururi',
+    title: 'Retururi',
+    description:
+      'Vezi și gestionează cererile de retur trimise de clienți prin formular.',
+  },
 ] as const
 
 export function AdminHomePage() {
@@ -27,6 +39,7 @@ export function AdminHomePage() {
     <AdminLayout
       title="Panou admin"
       lead="Alege ce vrei să faci în zona de administrare."
+      isHome
     >
       <nav className="admin-menu" aria-label="Secțiuni admin">
         {adminSections.map((section) => (

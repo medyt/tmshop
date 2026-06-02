@@ -290,6 +290,9 @@ function shoptop_row_to_shop_product(array $row): array
     if (!empty($row['category'])) {
         $product['category'] = (string) $row['category'];
     }
+    if (!empty($row['brand'])) {
+        $product['brand'] = (string) $row['brand'];
+    }
 
     return $product;
 }
@@ -342,6 +345,18 @@ function shoptop_row_to_product(array $row): array
     if (!empty($row['category'])) {
         $product['category'] = (string) $row['category'];
     }
+    if (!empty($row['ean'])) {
+        $product['ean'] = (string) $row['ean'];
+    }
+    if (!empty($row['brand'])) {
+        $product['brand'] = (string) $row['brand'];
+    }
+    if (!empty($row['google_category'])) {
+        $product['googleCategory'] = (string) $row['google_category'];
+    }
+    if (!empty($row['mpn'])) {
+        $product['mpn'] = (string) $row['mpn'];
+    }
 
     return $product;
 }
@@ -353,46 +368,34 @@ function shoptop_send_order_confirmation_email(array $order): void
         return;
     }
 
-    $config = shoptop_config();
-    $from = trim((string) ($config['mail_from'] ?? ''));
-    if ($from === '') {
-        $from = trim((string) ($config['shop_email'] ?? 'contact@shop-top.ro'));
+    require_once __DIR__ . '/mailer.php';
+
+    try {
+        $rendered = shoptop_render_order_confirmation_email($order);
+        shoptop_send_mail($email, $rendered['subject'], $rendered['html']);
+    } catch (Throwable $e) {
+        error_log('Order confirmation email failed: ' . $e->getMessage());
+    }
+}
+
+function shoptop_send_order_status_email(array $order, string $status): void
+{
+    $email = trim((string) ($order['customerEmail'] ?? ''));
+    if ($email === '') {
+        return;
     }
 
-    $subject = 'Confirmare comandă ' . (string) $order['id'];
-    $lines = [
-        'Bună ziua,',
-        '',
-        'Comanda ta a fost înregistrată.',
-        'Referință: ' . (string) $order['id'],
-        'Total: ' . number_format((float) $order['totalAmount'], 2, '.', '') . ' RON',
-        '',
-        'Produse:',
-    ];
+    require_once __DIR__ . '/mailer.php';
 
-    foreach ($order['items'] as $item) {
-        $lines[] = '- ' . (string) $item['productName']
-            . ' × ' . (string) $item['quantity']
-            . ' = ' . number_format((float) $item['lineTotal'], 2, '.', '') . ' RON';
+    try {
+        $rendered = shoptop_render_order_status_email($order, $status);
+        if ($rendered === null) {
+            return;
+        }
+        shoptop_send_mail($email, $rendered['subject'], $rendered['html']);
+    } catch (Throwable $e) {
+        error_log('Order status email failed: ' . $e->getMessage());
     }
-
-    $lines[] = 'Transport: ' . number_format(shoptop_shipping_flat_rate(), 2, '.', '') . ' RON';
-    if (!empty($order['deliveryCarrier'])) {
-        $carrierLabel = $order['deliveryCarrier'] === 'dpd' ? 'DPD' : 'Fan Courier';
-        $lines[] = 'Curier ales: ' . $carrierLabel;
-    }
-    $lines[] = '';
-    $lines[] = 'Livrare: ' . (string) $order['customerAddress'];
-    $lines[] = '';
-    $lines[] = 'Mulțumim!';
-
-    $headers = [
-        'MIME-Version: 1.0',
-        'Content-Type: text/plain; charset=UTF-8',
-        'From: ' . $from,
-    ];
-
-    @mail($email, $subject, implode("\n", $lines), implode("\r\n", $headers));
 }
 
 function shoptop_normalize_product(mixed $input): array
@@ -515,12 +518,40 @@ function shoptop_normalize_product(mixed $input): array
         $category = $trimmed !== '' ? $trimmed : null;
     }
 
+    $ean = null;
+    if (isset($input['ean']) && is_string($input['ean'])) {
+        $trimmed = trim($input['ean']);
+        $ean = $trimmed !== '' ? $trimmed : null;
+    }
+
+    $brand = null;
+    if (isset($input['brand']) && is_string($input['brand'])) {
+        $trimmed = trim($input['brand']);
+        $brand = $trimmed !== '' ? $trimmed : null;
+    }
+
+    $googleCategory = null;
+    if (isset($input['googleCategory']) && is_string($input['googleCategory'])) {
+        $trimmed = trim($input['googleCategory']);
+        $googleCategory = $trimmed !== '' ? $trimmed : null;
+    }
+
+    $mpn = null;
+    if (isset($input['mpn']) && is_string($input['mpn'])) {
+        $trimmed = trim($input['mpn']);
+        $mpn = $trimmed !== '' ? $trimmed : null;
+    }
+
     return [
         'id' => trim($id),
         'name' => trim($name),
         'slug' => $slug,
         'category' => $category,
         'sku' => $sku,
+        'ean' => $ean,
+        'brand' => $brand,
+        'google_category' => $googleCategory,
+        'mpn' => $mpn,
         'supplier_price_a' => $supplierPriceA,
         'supplier_price_b' => $supplierPriceB,
         'cost_supplier' => $costSupplier,
@@ -540,10 +571,12 @@ function shoptop_insert_product(PDO $pdo, array $product): void
 {
     $stmt = $pdo->prepare(
         'INSERT INTO products (
-            id, name, slug, category, sku, supplier_price_a, supplier_price_b, cost_supplier,
+            id, name, slug, category, sku, ean, brand, google_category, mpn,
+            supplier_price_a, supplier_price_b, cost_supplier,
             sale_price, discount_percent, stock_qty, image_urls, description, market_observations, notes
         ) VALUES (
-            :id, :name, :slug, :category, :sku, :supplier_price_a, :supplier_price_b, :cost_supplier,
+            :id, :name, :slug, :category, :sku, :ean, :brand, :google_category, :mpn,
+            :supplier_price_a, :supplier_price_b, :cost_supplier,
             :sale_price, :discount_percent, :stock_qty, :image_urls, :description, :market_observations, :notes
         )'
     );
@@ -558,6 +591,10 @@ function shoptop_update_product(PDO $pdo, array $product): int
             slug = :slug,
             category = :category,
             sku = :sku,
+            ean = :ean,
+            brand = :brand,
+            google_category = :google_category,
+            mpn = :mpn,
             supplier_price_a = :supplier_price_a,
             supplier_price_b = :supplier_price_b,
             cost_supplier = :cost_supplier,

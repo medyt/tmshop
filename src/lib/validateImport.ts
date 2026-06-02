@@ -124,6 +124,16 @@ export function parseProductRecord(o: Record<string, unknown>): Product | null {
     id: o.id,
     name: o.name,
     sku: typeof o.sku === 'string' ? o.sku : undefined,
+    ean:
+      typeof o.ean === 'string' && o.ean.trim() ? o.ean.trim() : undefined,
+    brand:
+      typeof o.brand === 'string' && o.brand.trim() ? o.brand.trim() : undefined,
+    googleCategory:
+      typeof o.googleCategory === 'string' && o.googleCategory.trim()
+        ? o.googleCategory.trim()
+        : undefined,
+    mpn:
+      typeof o.mpn === 'string' && o.mpn.trim() ? o.mpn.trim() : undefined,
     supplierPriceA,
     supplierPriceB,
     costSupplier,

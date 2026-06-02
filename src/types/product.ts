@@ -13,6 +13,14 @@ export type Product = {
   id: string
   name: string
   sku?: string
+  /** Cod de bare GTIN/EAN — folosit la feed-urile Google/Meta/TikTok. */
+  ean?: string
+  /** Brand/producător — atribut recomandat pentru feed-uri. */
+  brand?: string
+  /** Categorie Google Product Taxonomy (ID sau cale) pentru feed Google. */
+  googleCategory?: string
+  /** Manufacturer Part Number — folosit când lipsește EAN-ul. */
+  mpn?: string
   supplierPriceA: number
   supplierPriceB: number
   costSupplier: CostSupplier
@@ -38,6 +46,10 @@ export function createEmptyProduct(): Omit<Product, 'id'> {
   return {
     name: '',
     sku: '',
+    ean: '',
+    brand: '',
+    googleCategory: '',
+    mpn: '',
     supplierPriceA: 0,
     supplierPriceB: 0,
     costSupplier: 'lower',

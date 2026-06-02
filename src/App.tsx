@@ -8,6 +8,9 @@ import { AdminLoginPage } from './pages/AdminLoginPage'
 import { AdminAwbPage } from './pages/AdminAwbPage'
 import { AdminHomePage } from './pages/AdminHomePage'
 import { AdminOrdersPage } from './pages/AdminOrdersPage'
+import { AdminReviewsPage } from './pages/AdminReviewsPage'
+import { AdminReturnsPage } from './pages/AdminReturnsPage'
+import { ReturnRequestPage } from './pages/shop/ReturnRequestPage'
 import { CartPage } from './pages/CartPage'
 import { CheckoutPage } from './pages/CheckoutPage'
 import { GestiunePage } from './pages/GestiunePage'
@@ -17,6 +20,7 @@ import { OrderSuccessPage } from './pages/OrderSuccessPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { ShopHomePage } from './pages/ShopHomePage'
 import { ProductPage } from './pages/shop/ProductPage'
+import { NotFoundPage } from './pages/shop/NotFoundPage'
 import {
   ContactInfoPage,
   CookiesInfoPage,
@@ -66,6 +70,7 @@ export default function App() {
           <Route path="/comenzile-mele" element={<CustomerOrdersPage />} />
           <Route path="/livrare-si-plata" element={<DeliveryInfoPage />} />
           <Route path="/retur" element={<ReturnsInfoPage />} />
+          <Route path="/cerere-retur" element={<ReturnRequestPage />} />
           <Route path="/contact" element={<ContactInfoPage />} />
           <Route path="/intrebari-frecvente" element={<FaqInfoPage />} />
           <Route path="/termeni-si-conditii" element={<TermsInfoPage />} />
@@ -107,8 +112,24 @@ export default function App() {
               </AdminRoute>
             }
           />
+          <Route
+            path="/admin/recenzii"
+            element={
+              <AdminRoute>
+                <AdminReviewsPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/retururi"
+            element={
+              <AdminRoute>
+                <AdminReturnsPage />
+              </AdminRoute>
+            }
+          />
           <Route path="/gestiune" element={<Navigate to="/admin/gestiune" replace />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
         </ShopNoticeProvider>
       </CartProvider>

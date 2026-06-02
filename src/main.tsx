@@ -3,6 +3,10 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.tsx'
+import { initTracking } from './lib/analytics'
+
+// Încarcă pixelii dacă există deja consimțământ salvat din vizite anterioare.
+initTracking()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

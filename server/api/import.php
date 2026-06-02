@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/lib.php';
+require_once __DIR__ . '/baselinker.php';
 
 shoptop_send_cors();
 
@@ -45,6 +46,13 @@ try {
         shoptop_json_error('Import respins: SKU duplicat in lista trimisa.', 409);
     }
     throw $e;
+}
+
+// Sincronizare in masa cu BaseLinker (best-effort, dupa commit).
+if (shoptop_baselinker_enabled()) {
+    foreach ($products as $product) {
+        shoptop_baselinker_sync_product($pdo, $product);
+    }
 }
 
 shoptop_json_response(['ok' => true, 'count' => count($products)]);

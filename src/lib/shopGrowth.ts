@@ -113,6 +113,77 @@ export async function submitProductReview(input: {
   }
 }
 
+export type AdminReview = ProductReview & { approved: boolean }
+
+export type AdminReviewStatus = 'pending' | 'approved' | 'all'
+
+export async function fetchAdminReviews(
+  status: AdminReviewStatus = 'pending',
+): Promise<AdminReview[]> {
+  const res = await apiFetch(
+    `/reviews.php?admin=1&status=${status}`,
+    {},
+    { credentials: 'include' },
+  )
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res))
+  }
+  const data = (await res.json()) as unknown
+  if (!Array.isArray(data)) return []
+  const reviews: AdminReview[] = []
+  for (const item of data) {
+    if (!item || typeof item !== 'object') continue
+    const record = item as Record<string, unknown>
+    const id = typeof record.id === 'number' ? record.id : Number(record.id)
+    const productId =
+      typeof record.productId === 'string' ? record.productId : null
+    const authorName =
+      typeof record.authorName === 'string' ? record.authorName : null
+    const reviewBody = typeof record.body === 'string' ? record.body : null
+    const rating =
+      typeof record.rating === 'number' ? record.rating : Number(record.rating)
+    const createdAt =
+      typeof record.createdAt === 'string' ? record.createdAt : null
+    if (
+      !Number.isFinite(id) ||
+      !productId ||
+      !authorName ||
+      !reviewBody ||
+      !Number.isFinite(rating) ||
+      !createdAt
+    ) {
+      continue
+    }
+    reviews.push({
+      id,
+      productId,
+      authorName,
+      body: reviewBody,
+      rating: Math.max(1, Math.min(5, Math.floor(rating))),
+      createdAt,
+      approved: record.approved === true,
+    })
+  }
+  return reviews
+}
+
+export async function moderateReview(
+  id: number,
+  action: 'approve' | 'reject' | 'delete',
+): Promise<void> {
+  const res = await apiFetch(
+    '/reviews.php',
+    {
+      method: 'POST',
+      body: JSON.stringify({ action, id }),
+    },
+    { credentials: 'include' },
+  )
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res))
+  }
+}
+
 export function relatedProducts(
   product: Product,
   products: Product[],

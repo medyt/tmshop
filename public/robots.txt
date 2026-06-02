@@ -9,4 +9,4 @@ Disallow: /conectare
 Disallow: /inregistrare
 Disallow: /gestiune
 
-Sitemap: https://shop-top.ro/api/sitemap.php
+Sitemap: https://shop-top.ro/shoptop-api/sitemap.php

@@ -9,10 +9,13 @@ import { usePageMeta } from '../hooks/usePageMeta'
 import { trackBeginCheckout, trackPurchase } from '../lib/analytics'
 import { getCheckoutValidationMessage } from '../lib/checkoutValidation'
 import { saveOrderAccessToken } from '../lib/orderAccess'
-import { createOrder, isOrdersApiEnabled } from '../lib/ordersApi'
+import { createOrder, isOrdersApiEnabled, startCardPayment } from '../lib/ordersApi'
+import type { PaymentMethod } from '../types/order'
 import { SHOP_INFO_ROUTES, SITE_LEGAL } from '../lib/siteLegal'
 import { formatRon } from '../lib/shopCatalog'
 import {
+  GIFT_ADDON_PRICE_RON,
+  giftAddonAmount,
   orderTotal,
   shippingCost,
   shippingSummaryLabel,
@@ -43,12 +46,15 @@ export function CheckoutPage({ onOrderComplete }: CheckoutPageProps) {
   const [deliveryCarrier, setDeliveryCarrier] = useState<DeliveryCarrierId | null>(
     null,
   )
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cod')
+  const [giftAddon, setGiftAddon] = useState(false)
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { notify } = useShopNotice()
   const shipping = shippingCost(subtotal)
-  const total = orderTotal(subtotal)
+  const giftLine = giftAddonAmount(giftAddon)
+  const total = orderTotal(subtotal, { giftAddon })
 
   usePageMeta({
     title: `Checkout — ${SITE_LEGAL.brandName}`,
@@ -115,6 +121,8 @@ export function CheckoutPage({ onOrderComplete }: CheckoutPageProps) {
       const order = await createOrder({
         customer,
         deliveryCarrier,
+        paymentMethod,
+        giftAddon,
         items: lines.map((line) => ({
           productId: line.product.id,
           quantity: line.quantity,
@@ -123,6 +131,16 @@ export function CheckoutPage({ onOrderComplete }: CheckoutPageProps) {
       if (order.accessToken) {
         saveOrderAccessToken(order.id, order.accessToken)
       }
+
+      if (paymentMethod === 'card') {
+        // Inainte de redirect catre Netopia: golim cosul si obtinem linkul de plata.
+        const paymentUrl = await startCardPayment(order.id, order.accessToken)
+        clearCart()
+        onOrderComplete?.()
+        window.location.href = paymentUrl
+        return
+      }
+
       trackPurchase(order.id, order.totalAmount)
       clearCart()
       onOrderComplete?.()
@@ -144,7 +162,7 @@ export function CheckoutPage({ onOrderComplete }: CheckoutPageProps) {
         <div className="shop-page__head">
           <h1 className="shop-page__title">Checkout</h1>
           <p className="shop-page__lead muted">
-            Completează datele de livrare. Plata se face la livrare.
+            Completează datele de livrare și alege metoda de plată.
           </p>
         </div>
 
@@ -228,6 +246,63 @@ export function CheckoutPage({ onOrderComplete }: CheckoutPageProps) {
               onChange={setDeliveryCarrier}
             />
 
+            <label className="shop-field shop-field--wide shop-field--checkbox shop-checkout__gift">
+              <input
+                type="checkbox"
+                checked={giftAddon}
+                onChange={(event) => setGiftAddon(event.target.checked)}
+              />
+              <span>
+                <strong>Adaugă produs surpriză</strong>
+                <span className="muted">
+                  {' '}
+                  — {GIFT_ADDON_PRICE_RON} RON (se adaugă la total și apare pe
+                  factura comenzii ca linie separată).
+                </span>
+              </span>
+            </label>
+
+            <fieldset className="shop-payment">
+              <legend className="shop-payment__legend">Metodă de plată</legend>
+              <label
+                className={`shop-payment__option${
+                  paymentMethod === 'cod' ? ' shop-payment__option--active' : ''
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="paymentMethod"
+                  value="cod"
+                  checked={paymentMethod === 'cod'}
+                  onChange={() => setPaymentMethod('cod')}
+                />
+                <span>
+                  <strong>Plată la livrare (ramburs)</strong>
+                  <span className="muted"> — plătești curierului la primire.</span>
+                </span>
+              </label>
+              <label
+                className={`shop-payment__option${
+                  paymentMethod === 'card' ? ' shop-payment__option--active' : ''
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="paymentMethod"
+                  value="card"
+                  checked={paymentMethod === 'card'}
+                  onChange={() => setPaymentMethod('card')}
+                />
+                <span>
+                  <strong>Card online (Netopia)</strong>
+                  <span className="muted">
+                    {' '}
+                    — ești redirecționat securizat pentru plata cu cardul.
+                  </span>
+                </span>
+              </label>
+            </fieldset>
+
             <label className="shop-field shop-field--wide shop-field--checkbox">
               <input
                 type="checkbox"
@@ -256,7 +331,11 @@ export function CheckoutPage({ onOrderComplete }: CheckoutPageProps) {
               className="shop-btn shop-btn--primary shop-btn--block"
               disabled={submitting}
             >
-              {submitting ? 'Se trimite comanda…' : 'Plasează comanda'}
+              {submitting
+                ? 'Se trimite comanda…'
+                : paymentMethod === 'card'
+                  ? 'Continuă spre plată'
+                  : 'Plasează comanda'}
             </button>
           </form>
 
@@ -282,6 +361,12 @@ export function CheckoutPage({ onOrderComplete }: CheckoutPageProps) {
               <span>Transport</span>
               <strong>{shipping <= 0 ? 'Gratuit' : formatRon(shipping)}</strong>
             </div>
+            {giftAddon ? (
+              <div className="shop-summary__row">
+                <span>Produs surpriză</span>
+                <strong>{formatRon(giftLine)}</strong>
+              </div>
+            ) : null}
             <div className="shop-summary__row shop-summary__row--total">
               <span>Total</span>
               <strong>{formatRon(total)}</strong>

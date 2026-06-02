@@ -15,6 +15,10 @@ export type OrderStatus =
   | 'delivered'
   | 'cancelled'
 
+export type PaymentMethod = 'cod' | 'card'
+
+export type PaymentStatus = 'pending' | 'paid'
+
 export type Order = {
   id: string
   customerName: string
@@ -25,6 +29,8 @@ export type Order = {
   deliveryCarrier?: 'fan-courier' | 'dpd'
   totalAmount: number
   status: OrderStatus
+  paymentMethod?: PaymentMethod
+  paymentStatus?: PaymentStatus
   createdAt: string
   awbNumber?: string
   awbIssuedAt?: string
@@ -43,5 +49,8 @@ export type CheckoutCustomer = {
 export type CheckoutPayload = {
   customer: CheckoutCustomer
   deliveryCarrier: 'fan-courier' | 'dpd'
+  paymentMethod?: PaymentMethod
+  /** Linie fixă „Produs cadou” (+15 RON), doar dacă e bifat la checkout. */
+  giftAddon?: boolean
   items: Array<{ productId: string; quantity: number }>
 }

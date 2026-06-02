@@ -2,8 +2,10 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { ProductImage } from '../components/ProductImage'
+import { ShopBestSellers } from '../components/shop/ShopBestSellers'
 import { ShopLayout } from '../components/shop/ShopLayout'
 import { ShopProductPrice } from '../components/shop/ShopProductPrice'
+import { ShopTrustBar } from '../components/shop/ShopTrustBar'
 import { ShopStarRating } from '../components/shop/ShopStarRating'
 import { useShopNotice } from '../components/shop/ShopNoticeProvider'
 import { useCart } from '../contexts/CartContext'
@@ -97,9 +99,23 @@ export function ShopHomePage({ products }: ShopHomePageProps) {
     return sorted
   }, [category, products, query, sort])
 
+  /** „Cele mai vândute”: până avem statistici reale din comenzi, afișăm produse listate cu discount mare și stoc bun. */
+  const bestsellerProducts = useMemo(() => {
+    const list = products.filter(isListedInShop)
+    const sorted = [...list]
+    sorted.sort((a, b) => {
+      const d = (b.discountPercent ?? 0) - (a.discountPercent ?? 0)
+      if (d !== 0) return d
+      const s = (b.stockQty ?? 0) - (a.stockQty ?? 0)
+      if (s !== 0) return s
+      return (a.name || '').localeCompare(b.name || '', 'ro')
+    })
+    return sorted
+  }, [products])
+
   const handleAddToCart = (product: Product) => {
     addProduct(product)
-    trackAddToCart(product.id, 1)
+    trackAddToCart(product.id, 1, product.salePrice)
     notify(`${product.name || 'Produsul'} a fost adăugat în coș.`, 'Adăugat în coș')
   }
 
@@ -107,7 +123,6 @@ export function ShopHomePage({ products }: ShopHomePageProps) {
     <ShopLayout>
       <section className="shop-hero">
         <div className="shop-hero__inner">
-          <p className="shop-hero__eyebrow">Magazin local</p>
           <h1 className="shop-hero__title">Produse în stoc, gata de comandă.</h1>
           <p className="shop-hero__lead">
             Alege din catalog, adaugă în coș și finalizează comanda cu livrare
@@ -124,11 +139,21 @@ export function ShopHomePage({ products }: ShopHomePageProps) {
         </div>
       </section>
 
+      <ShopTrustBar />
+
       <section
         id="catalog"
         className="shop-catalog"
         aria-labelledby="catalog-heading"
       >
+        <div className="shop-catalog__badges">
+          <span className="shop-catalog__pill shop-catalog__pill--accent">
+            ✓ Stoc verificat
+          </span>
+          <span className="shop-catalog__pill">Livrare rapidă</span>
+          <span className="shop-catalog__pill">Plată sigură</span>
+          <span className="shop-catalog__pill">Oferte actualizate</span>
+        </div>
         <div className="shop-catalog__head">
           <h2 id="catalog-heading" className="shop-catalog__title">
             Catalog
@@ -177,9 +202,28 @@ export function ShopHomePage({ products }: ShopHomePageProps) {
         </div>
 
         {featured.length === 0 ? (
-          <p className="shop-empty muted">
-            Momentan nu avem produse disponibile online.
-          </p>
+          listedProductIds.length === 0 ? (
+            <p className="shop-empty muted">
+              Momentan nu avem produse disponibile online. Revino curând.
+            </p>
+          ) : (
+            <div className="shop-empty">
+              <p className="muted">
+                Niciun produs nu corespunde căutării sau filtrelor selectate.
+              </p>
+              <button
+                type="button"
+                className="shop-btn shop-btn--ghost"
+                onClick={() => {
+                  setQuery('')
+                  setCategory('all')
+                  setSort('name-asc')
+                }}
+              >
+                Resetează filtrele
+              </button>
+            </div>
+          )
         ) : (
           <ul className="shop-grid">
             {featured.map((product) => {
@@ -236,6 +280,12 @@ export function ShopHomePage({ products }: ShopHomePageProps) {
           </ul>
         )}
       </section>
+
+      <ShopBestSellers
+        products={bestsellerProducts}
+        ratings={ratings}
+        onAddToCart={handleAddToCart}
+      />
     </ShopLayout>
   )
 }

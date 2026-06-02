@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { ContactForm } from '../../components/shop/ContactForm'
 import { SHOP_INFO_ROUTES, SITE_LEGAL } from '../../lib/siteLegal'
 import { ShopInfoPage } from './ShopInfoPage'
 
@@ -22,12 +23,14 @@ export function DeliveryInfoPage() {
           ),
         },
         {
-          title: 'Plată la livrare',
+          title: 'Modalități de plată',
           body: (
             <p>
-              Plata se face la livrare, în numerar sau după modalitatea agreată
-              cu echipa {SITE_LEGAL.brandName}. Nu procesăm plăți online pe
-              site.
+              Poți plăti <strong>la livrare (ramburs)</strong>, în numerar sau
+              card la curier, ori <strong>online cu cardul</strong> prin
+              procesatorul autorizat Netopia Payments. Plata online este
+              securizată, iar {SITE_LEGAL.brandName} nu stochează datele
+              cardului tău.
             </p>
           ),
         },
@@ -48,19 +51,107 @@ export function DeliveryInfoPage() {
 export function ReturnsInfoPage() {
   return (
     <ShopInfoPage
-      title="Retur"
-      lead="Informații despre retururi și reclamații."
+      title="Retur și dreptul de retragere"
+      lead="Cum poți returna produsele și cum îți recuperezi banii."
       path={SHOP_INFO_ROUTES.returns}
       sections={[
         {
-          title: 'Cum soliționăm retururile',
-          body: <p>{SITE_LEGAL.returnSummary}</p>,
+          title: 'Dreptul legal de retragere (14 zile)',
+          body: (
+            <p>
+              În calitate de consumator, ai dreptul să te retragi din contract,
+              fără a invoca vreun motiv, în termen de 14 zile calendaristice de la
+              data la care intri în posesia fizică a produsului (conform OUG nr.
+              34/2014). Pentru a-ți exercita acest drept, ne poți informa printr-o
+              declarație neechivocă (de exemplu, un email) înainte de expirarea
+              celor 14 zile.
+            </p>
+          ),
+        },
+        {
+          title: 'Cum faci un retur',
+          body: (
+            <>
+              <ol>
+                <li>
+                  Completează{' '}
+                  <Link to={SHOP_INFO_ROUTES.returnRequest}>
+                    formularul de retur online
+                  </Link>{' '}
+                  sau trimite o solicitare la{' '}
+                  <a href={`mailto:${SITE_LEGAL.contactEmail}`}>
+                    {SITE_LEGAL.contactEmail}
+                  </a>
+                  , menționând numărul comenzii și produsele returnate.
+                </li>
+                <li>
+                  Îți confirmăm adresa de retur și pașii de expediere a
+                  coletului.
+                </li>
+                <li>
+                  Ambalează produsul în siguranță, împreună cu accesoriile și
+                  documentele primite.
+                </li>
+              </ol>
+              <p>
+                <Link
+                  className="shop-btn shop-btn--primary"
+                  to={SHOP_INFO_ROUTES.returnRequest}
+                >
+                  Deschide formularul de retur
+                </Link>
+              </p>
+            </>
+          ),
+        },
+        {
+          title: 'Returnarea banilor',
+          body: (
+            <p>
+              Îți rambursăm toate sumele primite, inclusiv costul standard de
+              livrare, în cel mult 14 zile de la data la care ne informezi despre
+              retragere. Putem amâna rambursarea până la primirea produsului sau
+              până ne dovedești că l-ai expediat. Costul direct al returnării
+              produsului este suportat de client, dacă nu s-a convenit altfel.
+            </p>
+          ),
+        },
+        {
+          title: 'Starea produsului returnat',
+          body: (
+            <p>
+              Ești responsabil doar pentru diminuarea valorii produselor rezultată
+              din manipularea acestora dincolo de ceea ce este necesar pentru a
+              stabili natura, caracteristicile și funcționarea lor.
+            </p>
+          ),
+        },
+        {
+          title: 'Excepții de la dreptul de retragere',
+          body: (
+            <p>
+              Dreptul de retragere nu se aplică, conform legii, anumitor categorii
+              de produse, precum: produse sigilate care nu pot fi returnate din
+              motive de igienă și care au fost desigilate, produse personalizate
+              sau care se deteriorează rapid.
+            </p>
+          ),
+        },
+        {
+          title: 'Produse defecte și garanție',
+          body: (
+            <p>
+              Pentru produse cu defecte sau neconforme beneficiezi de garanția
+              legală de conformitate. Te rugăm să ne contactezi și vom remedia
+              situația prin reparare, înlocuire sau rambursare, conform legii.
+            </p>
+          ),
         },
         {
           title: 'Contact pentru retur',
           body: (
             <p>
-              Pentru un retur sau o problemă cu produsul primit, scrie la{' '}
+              Pentru orice retur sau reclamație, scrie la{' '}
               <a href={`mailto:${SITE_LEGAL.contactEmail}`}>
                 {SITE_LEGAL.contactEmail}
               </a>
@@ -95,6 +186,8 @@ export function ContactInfoPage() {
               </p>
               <p>CUI: {SITE_LEGAL.operatorCui}</p>
               <p>Reg. Com.: {SITE_LEGAL.operatorRegCom}</p>
+              <p>EUID: {SITE_LEGAL.operatorEuid}</p>
+              <p>Data înființării: {SITE_LEGAL.operatorFoundedDate}</p>
               <p>
                 Email:{' '}
                 <a href={`mailto:${SITE_LEGAL.contactEmail}`}>
@@ -110,6 +203,18 @@ export function ContactInfoPage() {
                 Site:{' '}
                 <a href={SITE_LEGAL.siteUrl}>{SITE_LEGAL.siteUrl}</a>
               </p>
+            </>
+          ),
+        },
+        {
+          title: 'Trimite-ne un mesaj',
+          body: (
+            <>
+              <p className="muted" style={{ marginTop: 0 }}>
+                Completează formularul de mai jos; primim mesajul direct pe email.
+                Răspundem în programul afișat mai sus.
+              </p>
+              <ContactForm />
             </>
           ),
         },
@@ -173,8 +278,10 @@ export function TermsInfoPage() {
           title: 'Operator',
           body: (
             <p>
-              Magazinul online {SITE_LEGAL.siteUrl} este operat de{' '}
-              {SITE_LEGAL.brandName}, cu sediul în {SITE_LEGAL.operatorAddress}.
+              Magazinul online {SITE_LEGAL.siteUrl} ({SITE_LEGAL.brandName}) este
+              operat de {SITE_LEGAL.operatorName}, CUI {SITE_LEGAL.operatorCui},
+              Reg. Com. {SITE_LEGAL.operatorRegCom}, cu sediul în{' '}
+              {SITE_LEGAL.operatorAddress}.
             </p>
           ),
         },
@@ -202,6 +309,42 @@ export function TermsInfoPage() {
           body: <p>{SITE_LEGAL.deliverySummary}</p>,
         },
         {
+          title: 'Dreptul de retragere',
+          body: (
+            <p>
+              Consumatorii beneficiază de dreptul de retragere în 14 zile, conform
+              OUG nr. 34/2014. Detaliile complete sunt descrise în pagina de{' '}
+              <Link to={SHOP_INFO_ROUTES.returns}>Retur</Link>.
+            </p>
+          ),
+        },
+        {
+          title: 'Soluționarea litigiilor (ANPC / SOL)',
+          body: (
+            <p>
+              Pentru reclamații te poți adresa Autorității Naționale pentru
+              Protecția Consumatorilor (ANPC) –{' '}
+              <a
+                href="https://anpc.ro"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                anpc.ro
+              </a>
+              . De asemenea, poți folosi platforma europeană de soluționare
+              online a litigiilor (SOL/ODR):{' '}
+              <a
+                href="https://ec.europa.eu/consumers/odr"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                ec.europa.eu/consumers/odr
+              </a>
+              .
+            </p>
+          ),
+        },
+        {
           title: 'Contact',
           body: (
             <p>
@@ -226,8 +369,10 @@ export function PrivacyInfoPage() {
           title: 'Operatorul datelor',
           body: (
             <p>
-              {SITE_LEGAL.brandName} prelucrează datele necesare pentru
-              procesarea comenzilor și gestionarea conturilor de client.
+              {SITE_LEGAL.operatorName} (CUI {SITE_LEGAL.operatorCui}), care
+              operează magazinul {SITE_LEGAL.brandName}, prelucrează datele
+              necesare pentru procesarea comenzilor și gestionarea conturilor de
+              client.
             </p>
           ),
         },
@@ -242,11 +387,30 @@ export function PrivacyInfoPage() {
           ),
         },
         {
-          title: 'De ce folosim datele',
+          title: 'De ce folosim datele (temei legal)',
+          body: (
+            <ul>
+              <li>
+                Executarea contractului: preluarea, livrarea și gestionarea
+                comenzilor și a contului de client.
+              </li>
+              <li>
+                Obligație legală: emiterea documentelor fiscale și contabile.
+              </li>
+              <li>
+                Interes legitim: securitatea site-ului și prevenirea fraudelor.
+              </li>
+            </ul>
+          ),
+        },
+        {
+          title: 'Cui dezvăluim datele',
           body: (
             <p>
-              Datele sunt folosite pentru preluarea și livrarea comenzilor,
-              comunicarea cu tine și, dacă ai cont, autentificarea în magazin.
+              Transmitem datele strict necesar către firmele de curierat (de
+              exemplu {SITE_LEGAL.deliveryCarriersLabel}) pentru livrare și către
+              furnizorii noștri de servicii (găzduire, contabilitate), care le
+              prelucrează în numele nostru și în condiții de confidențialitate.
             </p>
           ),
         },
@@ -254,17 +418,48 @@ export function PrivacyInfoPage() {
           title: 'Durata păstrării',
           body: (
             <p>
-              Păstrăm datele cât este necesar pentru onorarea comenzilor,
-              obligațiile legale și soluționarea solicitărilor.
+              Păstrăm datele cât este necesar pentru onorarea comenzilor și
+              respectarea obligațiilor legale (de exemplu, documentele fiscale se
+              păstrează conform termenelor impuse de lege), după care le ștergem
+              sau le anonimizăm.
             </p>
           ),
         },
         {
-          title: 'Drepturile tale',
+          title: 'Drepturile tale (GDPR)',
+          body: (
+            <>
+              <p>
+                Conform Regulamentului (UE) 2016/679 (GDPR), ai dreptul de acces,
+                rectificare, ștergere, restricționare, portabilitate și opoziție
+                cu privire la datele tale.
+              </p>
+              <p>
+                Pentru exercitarea acestor drepturi, scrie la{' '}
+                <a href={`mailto:${SITE_LEGAL.contactEmail}`}>
+                  {SITE_LEGAL.contactEmail}
+                </a>
+                . Ai, de asemenea, dreptul de a depune o plângere la Autoritatea
+                Națională de Supraveghere a Prelucrării Datelor cu Caracter
+                Personal (ANSPDCP) –{' '}
+                <a
+                  href="https://www.dataprotection.ro"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  dataprotection.ro
+                </a>
+                .
+              </p>
+            </>
+          ),
+        },
+        {
+          title: 'Cookie-uri',
           body: (
             <p>
-              Poți solicita informații, rectificare sau ștergere scriind la{' '}
-              {SITE_LEGAL.contactEmail}.
+              Detalii despre cookie-urile folosite găsești în{' '}
+              <Link to={SHOP_INFO_ROUTES.cookies}>Politica de cookie</Link>.
             </p>
           ),
         },
@@ -290,11 +485,17 @@ export function CookiesInfoPage() {
           ),
         },
         {
-          title: 'Fără cookie-uri de marketing',
+          title: 'Cookie-uri de marketing (opționale)',
           body: (
             <p>
-              În această versiune a magazinului nu folosim cookie-uri de
-              analiză sau publicitate de la terți.
+              Dacă alegi „Accept toate”, încărcăm scripturi de marketing de la
+              terți pentru a măsura performanța reclamelor și a afișa anunțuri
+              relevante: <strong>Meta Pixel</strong> (Meta Platforms Ireland
+              Ltd.) și <strong>TikTok Pixel</strong> (TikTok Technology
+              Limited). Acestea pot seta cookie-uri proprii și transmit către
+              furnizori evenimente precum vizualizarea unui produs, adăugarea în
+              coș și finalizarea comenzii. Aceste cookie-uri nu se activează dacă
+              alegi „Doar esențiale”.
             </p>
           ),
         },
@@ -302,9 +503,12 @@ export function CookiesInfoPage() {
           title: 'Cum îți poți gestiona alegerea',
           body: (
             <p>
-              La prima vizită îți poți alege să accepți toate cookie-urile
-              esențiale sau doar cele strict necesare. Poți șterge datele din
-              browser oricând.
+              La prima vizită poți accepta toate cookie-urile sau doar cele
+              strict necesare. Îți poți schimba alegerea oricând ștergând datele
+              site-ului din browser (preferința de cookie este salvată local) sau
+              folosind setările de confidențialitate ale browserului. Pentru
+              cookie-urile de marketing îți poți retrage consimțământul și din
+              setările contului Meta/TikTok.
             </p>
           ),
         },
