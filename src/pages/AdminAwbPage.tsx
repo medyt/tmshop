@@ -1,9 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AdminLayout } from '../components/admin/AdminLayout'
-import { AwbPrintSheet } from '../components/admin/AwbPrintSheet'
 import { OrderStatusBadge } from '../components/admin/OrdersTable'
-import { fetchOrders, isOrdersApiEnabled, issueOrderAwb } from '../lib/ordersApi'
+import {
+  bulkPrintOrderAwbPdf,
+  fetchOrders,
+  isOrdersApiEnabled,
+  issueOrderAwb,
+  openAwbPdfBlob,
+} from '../lib/ordersApi'
 import { formatRon } from '../lib/shopCatalog'
+import {
+  type DeliveryCarrierId,
+} from '../lib/shippingCarriers'
 import type { Order } from '../types/order'
 
 function formatOrderDate(value: string): string {
@@ -20,17 +28,27 @@ function formatOrderDate(value: string): string {
 
 /** Comenzile care nu se mai expediază (nu au rost pentru AWB). */
 function isShippable(order: Order): boolean {
-  return order.status !== 'cancelled'
+  return order.status !== 'cancelled' && order.status !== 'returned'
 }
 
-export function AdminAwbPage() {
+function orderMatchesCarrier(order: Order, carrier: DeliveryCarrierId): boolean {
+  if (!order.awbNumber) return true
+  return (order.deliveryCarrier ?? 'dpd') === carrier
+}
+
+type AdminAwbPageProps = {
+  onStockChanged?: () => void
+}
+
+export function AdminAwbPage({ onStockChanged }: AdminAwbPageProps) {
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(isOrdersApiEnabled())
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [printOrders, setPrintOrders] = useState<Order[] | null>(null)
+  const [carrierFilter, setCarrierFilter] =
+    useState<DeliveryCarrierId>('fan-courier')
 
   const loadOrders = useCallback(async () => {
     if (!isOrdersApiEnabled()) return
@@ -39,9 +57,15 @@ export function AdminAwbPage() {
     try {
       const loaded = await fetchOrders()
       setOrders(loaded)
-      // Preselectează comenzile expediabile.
       setSelectedIds(
-        new Set(loaded.filter(isShippable).map((order) => order.id)),
+        new Set(
+          loaded
+            .filter(
+              (order) =>
+                isShippable(order) && orderMatchesCarrier(order, carrierFilter),
+            )
+            .map((order) => order.id),
+        ),
       )
     } catch (err: unknown) {
       setError(
@@ -50,13 +74,21 @@ export function AdminAwbPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [carrierFilter])
 
   useEffect(() => {
     void loadOrders()
   }, [loadOrders])
 
-  const shippable = useMemo(() => orders.filter(isShippable), [orders])
+  const visibleOrders = useMemo(
+    () => orders.filter((o) => orderMatchesCarrier(o, carrierFilter)),
+    [orders, carrierFilter],
+  )
+
+  const shippable = useMemo(
+    () => visibleOrders.filter(isShippable),
+    [visibleOrders],
+  )
 
   const selectedOrders = useMemo(
     () => orders.filter((o) => selectedIds.has(o.id)),
@@ -65,6 +97,8 @@ export function AdminAwbPage() {
 
   const allSelected =
     shippable.length > 0 && shippable.every((o) => selectedIds.has(o.id))
+
+  const carrierLabel = carrierFilter === 'fan-courier' ? 'Fan Courier' : 'DPD'
 
   const toggleAll = () => {
     setSelectedIds((current) => {
@@ -84,15 +118,21 @@ export function AdminAwbPage() {
     })
   }
 
-  const openPrint = useCallback((list: Order[]) => {
-    setPrintOrders(list)
-    window.setTimeout(() => window.print(), 80)
+  const openPdfForOrders = useCallback(async (list: Order[]) => {
+    const ids = list.filter((o) => o.awbNumber).map((o) => o.id)
+    if (ids.length === 0) {
+      throw new Error('Niciuna dintre comenzile selectate nu are AWB generat.')
+    }
+    // Un singur PDF multi-page (ca DPD), nu câte un tab per AWB.
+    const pdf = await bulkPrintOrderAwbPdf(ids)
+    openAwbPdfBlob(pdf)
   }, [])
 
-  /** Generează AWB pentru selecția care nu are încă, apoi deschide print în masă. */
   const handleGenerateAndPrint = useCallback(async () => {
     if (busy) return
-    const targets = orders.filter((o) => selectedIds.has(o.id))
+    const targets = orders.filter(
+      (o) => selectedIds.has(o.id) && orderMatchesCarrier(o, carrierFilter),
+    )
     if (targets.length === 0) {
       setError('Selectează cel puțin o comandă.')
       return
@@ -108,8 +148,10 @@ export function AdminAwbPage() {
     try {
       let done = 0
       for (const order of missing) {
-        setProgress(`Generez AWB ${done + 1} din ${missing.length}…`)
-        const next = await issueOrderAwb(order.id)
+        setProgress(
+          `Generez AWB ${carrierLabel} ${done + 1} din ${missing.length}…`,
+        )
+        const next = await issueOrderAwb(order.id, carrierFilter)
         updatedById.set(next.id, next)
         done += 1
       }
@@ -118,15 +160,17 @@ export function AdminAwbPage() {
         setOrders((current) =>
           current.map((item) => updatedById.get(item.id) ?? item),
         )
+        onStockChanged?.()
       }
 
       const finalList = targets.map((o) => updatedById.get(o.id) ?? o)
       setProgress(
         missing.length > 0
-          ? `${missing.length} AWB generate. Se deschide printarea…`
-          : 'Se deschide printarea…',
+          ? `${missing.length} AWB generate. Se pregătește PDF-ul…`
+          : 'Se pregătește PDF-ul cu etichete…',
       )
-      openPrint(finalList)
+      await openPdfForOrders(finalList)
+      setProgress(null)
     } catch (err: unknown) {
       setError(
         err instanceof Error ? err.message : 'Nu am putut genera AWB-urile.',
@@ -134,18 +178,41 @@ export function AdminAwbPage() {
     } finally {
       setBusy(false)
     }
-  }, [busy, openPrint, orders, selectedIds])
+  }, [
+    busy,
+    carrierFilter,
+    carrierLabel,
+    onStockChanged,
+    openPdfForOrders,
+    orders,
+    selectedIds,
+  ])
 
-  /** Printează doar selecția care are deja AWB (fără să genereze nimic nou). */
-  const handlePrintExisting = useCallback(() => {
-    const withAwb = selectedOrders.filter((o) => o.awbNumber)
+  const handlePrintExisting = useCallback(async () => {
+    if (busy) return
+    const withAwb = selectedOrders.filter(
+      (o) => o.awbNumber && orderMatchesCarrier(o, carrierFilter),
+    )
     if (withAwb.length === 0) {
       setError('Niciuna dintre comenzile selectate nu are AWB generat.')
       return
     }
+    setBusy(true)
     setError(null)
-    openPrint(withAwb)
-  }, [openPrint, selectedOrders])
+    setProgress('Se pregătește PDF-ul cu etichete…')
+    try {
+      await openPdfForOrders(withAwb)
+      setProgress(null)
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Nu am putut descărca etichetele PDF.',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }, [busy, carrierFilter, openPdfForOrders, selectedOrders])
 
   const selectedCount = selectedIds.size
   const selectedWithAwb = selectedOrders.filter((o) => o.awbNumber).length
@@ -153,14 +220,14 @@ export function AdminAwbPage() {
   return (
     <AdminLayout
       title="AWB pentru printare"
-      lead="Selectează comenzile, generează AWB-urile lipsă și printează-le în masă, gata de lipit pe colete."
+      lead={`Selectează comenzile, generează AWB-uri ${carrierLabel} și deschide etichetele PDF oficiale.`}
       actions={
         <>
           <button
             type="button"
             className="btn secondary"
             disabled={busy || selectedWithAwb === 0}
-            onClick={handlePrintExisting}
+            onClick={() => void handlePrintExisting()}
           >
             Printează AWB existente
           </button>
@@ -184,6 +251,35 @@ export function AdminAwbPage() {
         </section>
       ) : (
         <section className="panel panel--list" aria-label="AWB comenzi">
+          <div
+            className="admin-orders__tabs admin-orders__tabs--carrier"
+            role="tablist"
+            aria-label="Filtru curier"
+          >
+            <span className="admin-orders__filter-label">Curier</span>
+            {[
+              { id: 'fan-courier' as const, name: 'Fan Courier' },
+              { id: 'dpd' as const, name: 'DPD' },
+            ].map((tab) => {
+              const active = carrierFilter === tab.id
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  className={`admin-orders__tab${active ? ' admin-orders__tab--active' : ''}`}
+                  onClick={() => {
+                    setCarrierFilter(tab.id)
+                    setSelectedIds(new Set())
+                  }}
+                >
+                  {tab.name}
+                </button>
+              )
+            })}
+          </div>
+
           <div className="awb-toolbar">
             <div className="awb-toolbar__info">
               <strong>{selectedCount}</strong> selectate · {shippable.length}{' '}
@@ -205,13 +301,15 @@ export function AdminAwbPage() {
             </p>
           ) : null}
 
-          {!loading && !error && orders.length === 0 ? (
+          {!loading && !error && visibleOrders.length === 0 ? (
             <div className="empty-state">
-              <p className="muted">Nu există comenzi pentru AWB.</p>
+              <p className="muted">
+                Nu există comenzi pentru AWB {carrierLabel}.
+              </p>
             </div>
           ) : null}
 
-          {!loading && !error && orders.length > 0 ? (
+          {!loading && !error && visibleOrders.length > 0 ? (
             <div className="table-wrap">
               <table className="data-table data-table--orders">
                 <thead>
@@ -233,7 +331,7 @@ export function AdminAwbPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {orders.map((order) => {
+                  {visibleOrders.map((order) => {
                     const checked = selectedIds.has(order.id)
                     const disabled = !isShippable(order)
                     return (
@@ -244,37 +342,30 @@ export function AdminAwbPage() {
                         <td className="th-check">
                           <input
                             type="checkbox"
-                            aria-label={`Selectează ${order.id}`}
+                            aria-label={`Selectează comanda ${order.id}`}
                             checked={checked}
                             disabled={disabled}
                             onChange={() => toggleOne(order.id)}
                           />
                         </td>
-                        <td className="cell-nowrap">
-                          {formatOrderDate(order.createdAt)}
-                        </td>
+                        <td>{formatOrderDate(order.createdAt)}</td>
                         <td>
-                          <span className="cell-order-id">{order.id}</span>
+                          <strong>#{order.id}</strong>
                         </td>
+                        <td>{order.customerName}</td>
+                        <td>{formatRon(order.totalAmount)}</td>
                         <td>
-                          <span className="cell-title">
-                            {order.customerName}
-                          </span>
-                          <span className="cell-sku">
-                            {order.customerPhone}
-                          </span>
-                        </td>
-                        <td className="cell-nowrap">
-                          {formatRon(order.totalAmount)}
-                        </td>
-                        <td>
-                          <OrderStatusBadge status={order.status} />
+                          <OrderStatusBadge
+                            status={order.status}
+                            paymentStatus={order.paymentStatus}
+                            returnReceived={order.returnReceived}
+                          />
                         </td>
                         <td>
                           {order.awbNumber ? (
-                            <span className="cell-sku">{order.awbNumber}</span>
+                            <code>{order.awbNumber}</code>
                           ) : (
-                            <span className="muted">Neemis</span>
+                            <span className="muted">—</span>
                           )}
                         </td>
                       </tr>
@@ -286,35 +377,6 @@ export function AdminAwbPage() {
           ) : null}
         </section>
       )}
-
-      {printOrders && printOrders.length > 0 ? (
-        <div className="awb-print-host" role="dialog" aria-modal="true">
-          <div className="awb-print-host__toolbar">
-            <span className="awb-print-host__count">
-              {printOrders.length} AWB
-            </span>
-            <button
-              type="button"
-              className="btn secondary"
-              onClick={() => setPrintOrders(null)}
-            >
-              Închide
-            </button>
-            <button
-              type="button"
-              className="btn primary"
-              onClick={() => window.print()}
-            >
-              Printează
-            </button>
-          </div>
-          <div className="awb-print-host__sheets">
-            {printOrders.map((order) => (
-              <AwbPrintSheet key={order.id} order={order} />
-            ))}
-          </div>
-        </div>
-      ) : null}
     </AdminLayout>
   )
 }

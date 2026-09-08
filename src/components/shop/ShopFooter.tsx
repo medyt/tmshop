@@ -73,12 +73,60 @@ export function ShopFooter() {
             </section>
           ))}
         </div>
-        <p className="shop-footer__copy muted">
-          © {year} {SITE_LEGAL.brandName} · {SITE_LEGAL.operatorName} · CUI{' '}
-          {SITE_LEGAL.operatorCui} · {SITE_LEGAL.operatorRegCom} ·{' '}
-          {SITE_LEGAL.operatorAddress}
-          {SITE_LEGAL.contactPhone ? ` · ${SITE_LEGAL.contactPhone}` : ''}
-        </p>
+        <div className="shop-footer__bottom">
+          <p className="shop-footer__copy muted">
+            © {year} {SITE_LEGAL.brandName}
+          </p>
+          <div className="shop-footer__badges">
+            <a
+              href="https://netopia-payments.com"
+              target="_blank"
+              rel="noreferrer noopener"
+              title="Plăți securizate prin Netopia"
+            >
+              <img
+                className="shop-footer__badge shop-footer__badge--light"
+                src="/badges/netopia.svg"
+                alt="Netopia Payments - plăți online securizate"
+                width="200"
+                height="36"
+              />
+              <img
+                className="shop-footer__badge shop-footer__badge--dark"
+                src="/badges/netopia-white.svg"
+                alt="Netopia Payments - plăți online securizate"
+                width="200"
+                height="36"
+              />
+            </a>
+            <a
+              href="https://anpc.ro/ce-este-sal/"
+              target="_blank"
+              rel="noreferrer noopener"
+              title="Soluționarea Alternativă a Litigiilor - ANPC"
+            >
+              <img
+                src="/badges/anpc-sal.png"
+                alt="ANPC - Soluționarea Alternativă a Litigiilor (SAL)"
+                width="250"
+                height="50"
+              />
+            </a>
+            <a
+              href="https://ec.europa.eu/consumers/odr"
+              target="_blank"
+              rel="noreferrer noopener"
+              title="Soluționarea Online a Litigiilor"
+            >
+              <img
+                src="/badges/anpc-sol.png"
+                alt="Soluționarea Online a Litigiilor (SOL / ODR)"
+                width="250"
+                height="50"
+              />
+            </a>
+          </div>
+        </div>
       </div>
     </footer>
   )

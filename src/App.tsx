@@ -4,12 +4,14 @@ import { ShopNoticeProvider } from './components/shop/ShopNoticeProvider'
 import { AuthProvider } from './contexts/AuthContext'
 import { CartProvider } from './contexts/CartContext'
 import { useProducts } from './hooks/useProducts'
+import { isProductsApiEnabled } from './lib/productsApi'
 import { AdminLoginPage } from './pages/AdminLoginPage'
 import { AdminAwbPage } from './pages/AdminAwbPage'
 import { AdminHomePage } from './pages/AdminHomePage'
 import { AdminOrdersPage } from './pages/AdminOrdersPage'
 import { AdminReviewsPage } from './pages/AdminReviewsPage'
 import { AdminReturnsPage } from './pages/AdminReturnsPage'
+import { AdminMonthlyStatsPage } from './pages/AdminMonthlyStatsPage'
 import { ReturnRequestPage } from './pages/shop/ReturnRequestPage'
 import { CartPage } from './pages/CartPage'
 import { CheckoutPage } from './pages/CheckoutPage'
@@ -31,22 +33,22 @@ import {
   TermsInfoPage,
 } from './pages/shop/shopInfoPages'
 
-export default function App() {
+function AppRoutes() {
   const productApi = useProducts()
 
   return (
-    <AuthProvider>
-      {productApi.loading ? (
-        <p className="app-status muted" role="status">
-          Se încarcă produsele din MySQL…
-        </p>
-      ) : null}
+    <>
       {productApi.error ? (
         <p className="app-status app-status--error" role="alert">
           {productApi.error}
         </p>
       ) : null}
-      <CartProvider products={productApi.products}>
+      <CartProvider
+        products={productApi.products}
+        productsHydrated={
+          !isProductsApiEnabled() || !productApi.loading
+        }
+      >
         <ShopNoticeProvider>
           <Routes>
           <Route
@@ -100,7 +102,7 @@ export default function App() {
             path="/admin/comenzi"
             element={
               <AdminRoute>
-                <AdminOrdersPage />
+                <AdminOrdersPage onStockChanged={productApi.reloadProducts} />
               </AdminRoute>
             }
           />
@@ -108,7 +110,7 @@ export default function App() {
             path="/admin/awb"
             element={
               <AdminRoute>
-                <AdminAwbPage />
+                <AdminAwbPage onStockChanged={productApi.reloadProducts} />
               </AdminRoute>
             }
           />
@@ -128,11 +130,35 @@ export default function App() {
               </AdminRoute>
             }
           />
+          <Route
+            path="/admin/statistici-lunare"
+            element={
+              <AdminRoute>
+                <AdminMonthlyStatsPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/statistici"
+            element={
+              <AdminRoute>
+                <Navigate to="/admin/statistici-lunare" replace />
+              </AdminRoute>
+            }
+          />
           <Route path="/gestiune" element={<Navigate to="/admin/gestiune" replace />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
         </ShopNoticeProvider>
       </CartProvider>
+    </>
+  )
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppRoutes />
     </AuthProvider>
   )
 }

@@ -1,0 +1,12 @@
+---
+description: SKU-urile din feed-ul Meta rămân fixe după lansare
+globs: src/lib/metaCatalogCsv.ts,src/lib/analytics.ts,src/components/ProductForm.tsx,public/facebook-catalog.php,src/pages/shop/ProductPage.tsx,src/contexts/CartContext.tsx
+alwaysApply: false
+---
+
+# SKU Meta / Facebook
+
+- `id` din catalogul Meta (`catalog.csv`) este SKU-ul produsului, nu id-ul intern (`A001`).
+- Pixelul (ViewContent, AddToCart, Purchase) trimite același SKU în `content_ids`.
+- După lansare, SKU-ul **nu se mai schimbă**. Se pot actualiza preț, titlu, imagini, descriere.
+- Nu mapa evenimentele pe id intern și nu „repara” feed-ul schimbând SKU-uri existente.

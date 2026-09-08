@@ -217,6 +217,7 @@ export function AdminReviewsTable({ reviews, onModerate }: Props) {
                     />
                   </th>
                   <th scope="col">Recenzie</th>
+                  <th scope="col">Poză</th>
                   <th scope="col" className="th-actions">
                     Acțiuni
                   </th>
@@ -242,6 +243,15 @@ export function AdminReviewsTable({ reviews, onModerate }: Props) {
                       <span className="review-table__preview" title={review.body}>
                         {review.body}
                       </span>
+                    </td>
+                    <td className="cell-nowrap">
+                      {review.imageUrl ? (
+                        <a href={review.imageUrl} target="_blank" rel="noreferrer">
+                          Vezi
+                        </a>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
                     </td>
                     <td>
                       <div className="admin-reviews__row-actions">
@@ -281,6 +291,16 @@ export function AdminReviewsTable({ reviews, onModerate }: Props) {
             {sorted.map((review) => (
               <li key={review.id}>
                 <article className="review-card">
+                  {review.imageUrl ? (
+                    <a
+                      href={review.imageUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="review-card__image"
+                    >
+                      <img src={review.imageUrl} alt="" loading="lazy" decoding="async" />
+                    </a>
+                  ) : null}
                   <div className="review-card__top">
                     <strong>{review.authorName}</strong>
                     <ReviewStatusBadge approved={review.approved} />

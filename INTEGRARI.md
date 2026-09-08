@@ -60,11 +60,30 @@ Pleacă de la [`server/api/config.example.php`](server/api/config.example.php). 
 ],
 
 'netopia' => [
-    'sandbox' => true,           // false în producție
+    'sandbox' => false,          // true doar pentru teste
     'api_key' => 'API_KEY_NETOPIA',
     'pos_signature' => 'SEMNATURA_POS',
     'redirect_url' => 'https://shop-top.ro/shoptop-api/payment_netopia_return.php',
     'notify_url' => 'https://shop-top.ro/shoptop-api/payment_netopia_ipn.php',
+],
+
+'shipping_free_over' => 99,     // 0 = fără livrare gratuită
+
+'meta' => [
+    'pixel_id' => '2120556288842775',
+    'access_token' => '',        // Events Manager → Generate access token
+    'test_event_code' => '',     // doar la test, apoi scoți
+    'min_product_profit' => 25,  // exclude din catalog.csv SKU-urile slabe
+],
+
+'cart_reminder' => [
+    'secret' => 'un-secret-lung',
+    'delay_hours' => 2,
+],
+
+'sms' => [
+    'token' => '',              // SMSO → Developers → API
+    'sender' => '',             // ID expeditor (gol = primul din cont)
 ],
 ```
 
@@ -79,8 +98,9 @@ Pleacă de la [`server/api/config.example.php`](server/api/config.example.php). 
 
 ```
 VITE_API_URL=/shoptop-api
-VITE_META_PIXEL_ID=1234567890
+VITE_META_PIXEL_ID=2120556288842775
 VITE_TIKTOK_PIXEL_ID=ABCDEFGHIJ
+VITE_GA_MEASUREMENT_ID=G-15PV24R6TN
 ```
 
 Apoi rulează local:
@@ -89,8 +109,8 @@ Apoi rulează local:
 npm run build
 ```
 
-Pixelii se încarcă **doar** dacă vizitatorul apasă „Accept toate” în bannerul de cookie
-(consimțământ GDPR). Cu „Doar esențiale” nu se încarcă niciun script de marketing.
+Pixelii **TikTok și GA4** se încarcă doar dacă vizitatorul apasă „Accept toate”.
+**Meta Pixel** e în `index.html` la build (fără consimțământ) ca Facebook să poată atribui achizițiile.
 
 ---
 
@@ -107,28 +127,36 @@ API (în folderul `shoptop-api/` de pe server) — fișiere PHP noi/modificate:
 - `payment_netopia_ipn.php` (nou)
 - `payment_netopia_return.php` (nou)
 - `returns.php` (nou)
+- `checkout_drafts.php` (nou — reminder coș)
+- `meta_capi.php` (nou — Conversions API)
+- `sms.php` (nou — confirmare comandă SMS)
 - `lib.php` (modificat)
 - `orders.php` (modificat)
 - `products.php` (modificat)
 - `import.php` (modificat)
+- `payment_netopia_ipn.php` (modificat)
+- `mailer.php` (modificat)
 
 > NU suprascrie `server/api/config.php` de pe server cu `config.example.php`.
 > Editează direct `config.php` de pe server cu valorile reale.
 
 ---
 
-## 5. Meta Pixel & TikTok Pixel
+## 5. Meta Pixel, TikTok Pixel, Google Analytics 4 și Conversions API
 
-1. Creează pixelul în Meta Events Manager / TikTok Events Manager și ia ID-ul.
-2. Pune ID-urile în `.env.production`, rebuild, urcă `dist/`.
-3. Verifică cu **Meta Pixel Helper** / **TikTok Pixel Helper** (extensii Chrome).
+1. Creează pixelul / proprietatea în Meta Events Manager / TikTok Events Manager / Google Analytics și ia ID-ul.
+2. Pune ID-urile în `.env.production` (`VITE_META_PIXEL_ID`, `VITE_TIKTOK_PIXEL_ID`, `VITE_GA_MEASUREMENT_ID`), rebuild, urcă `dist/`.
+3. **Conversions API:** în Events Manager → Data Sources → pixel → Settings → Generate access token. Copiază tokenul în `config.php` → `meta.access_token` (nu în git). `event_id` Purchase e `purchase_{orderId}` (dedup browser + server).
+4. Verifică cu **Meta Pixel Helper** / Test events (poți pune `test_event_code` temporar) / **TikTok Pixel Helper** / GA4 **Realtime**.
+5. Feed catalog: `https://shop-top.ro/catalog.csv`. SKU-urile cu marjă (vânzare − achiziție) sub `meta.min_product_profit` (implicit 25 RON) **nu** mai apar în feed. SKU-urile rămase nu se schimbă.
+6. Reminder coș: cron cPanel la 15 min → `https://shop-top.ro/shoptop-api/checkout_drafts.php?cron=1&secret=SECRETUL_TAU`.
 
-Evenimente trimise automat (după consimțământ):
-- `PageView` la fiecare pagină.
-- `ViewContent` la pagina de produs.
-- `AddToCart` la adăugarea în coș.
-- `InitiateCheckout` la intrarea în checkout.
-- `Purchase` / `CompletePayment` la finalizarea comenzii (ramburs) sau revenirea după plata cu cardul.
+Evenimente:
+- `PageView` / `page_view` la fiecare pagină. **Meta** rulează și fără „Accept toate”; TikTok/GA4 doar după consimțământ marketing.
+- `ViewContent` / `view_item` la pagina de produs.
+- `AddToCart` / `add_to_cart` la adăugarea în coș.
+- `InitiateCheckout` / `begin_checkout` la checkout și la deschiderea comenzii rapide (`content_ids` = SKU).
+- `Purchase` / `CompletePayment` / `purchase` la ramburs (browser + CAPI) sau la IPN card (CAPI; browser pe pagina de succes dacă IPN a marcat `paid`).
 
 ---
 
@@ -194,7 +222,7 @@ Pentru ca feed-urile să fie aprobate, completează în admin:
    `https://shop-top.ro/shoptop-api/payment_netopia_ipn.php`
    și URL-ul de retur:
    `https://shop-top.ro/shoptop-api/payment_netopia_return.php`
-3. Ține `sandbox => true` cât timp testezi; pune `false` la lansare.
+3. Folosește `sandbox => false` + certificatele live (`netopia-live.cer` / `.key`).
 
 Flux:
 - La checkout clientul alege „Card online (Netopia)”.
@@ -211,11 +239,11 @@ Flux:
 Frontend:
 - [ ] Site-ul se încarcă, navigarea pe mobil (meniu hamburger) funcționează.
 - [ ] Banner cookie: „Doar esențiale” NU încarcă pixelii; „Accept toate” îi încarcă.
-- [ ] Pixel Helper (Meta/TikTok) vede evenimentele PageView/ViewContent/AddToCart.
+- [ ] Pixel Helper (Meta/TikTok) / GA4 Realtime vede evenimentele PageView/ViewContent/AddToCart.
 
 Comenzi:
 - [ ] Comandă cu ramburs → email de confirmare primit → comanda apare în BaseLinker.
-- [ ] Comandă cu cardul (sandbox) → redirect Netopia → plată test → revenire pe pagina comenzii.
+- [ ] Comandă cu cardul (live) → redirect pe `secure.mobilpay.ro` → plată reală → IPN → `paid`.
 - [ ] IPN: comanda devine „plătită” și ajunge în BaseLinker.
 - [ ] Schimbarea statusului din admin (confirmată/expediată) trimite email clientului.
 - [ ] Emiterea AWB trimite email „expediată”.

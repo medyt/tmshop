@@ -13,13 +13,16 @@ type ShopLayoutProps = {
 
 export function ShopLayout({ children }: ShopLayoutProps) {
   const location = useLocation()
+  const productLanding = location.pathname.startsWith('/produs/')
 
   useEffect(() => {
     trackPageView(location.pathname, document.title)
   }, [location.pathname])
 
   return (
-    <div className="shop">
+    <div
+      className={`shop shop--dark${productLanding ? ' shop--product-lp' : ''}`}
+    >
       <ShopHeader />
       <main className="shop-main">{children}</main>
       <ShopFooter />

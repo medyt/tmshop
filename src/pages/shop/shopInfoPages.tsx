@@ -11,14 +11,31 @@ export function DeliveryInfoPage() {
       path={SHOP_INFO_ROUTES.delivery}
       sections={[
         {
-          title: 'Livrare prin curier',
+          title: 'Modul de livrare',
           body: (
             <p>
-              {SITE_LEGAL.brandName} livrează comenzile prin{' '}
-              {SITE_LEGAL.deliveryCarriersLabel}, în România. Costul transportului
-              este de {SITE_LEGAL.shippingFlatRateRon} RON per comandă. Curierul
-              este ales în funcție de adresă și disponibilitate. Intervalul de
-              livrare este confirmat după plasarea comenzii.
+              {SITE_LEGAL.brandName} livrează comenzile exclusiv prin{' '}
+              {SITE_LEGAL.deliveryCarriersLabel}, pe întreg teritoriul României.
+              Costul transportului este de {SITE_LEGAL.shippingFlatRateRon} RON
+              per comandă
+              {SITE_LEGAL.shippingFreeOverRon > 0
+                ? `, gratuit de la ${SITE_LEGAL.shippingFreeOverRon} RON`
+                : ''}
+              . Curierul este ales în funcție de adresă și
+              disponibilitate, iar coletul este predat la adresa indicată la
+              plasarea comenzii.
+            </p>
+          ),
+        },
+        {
+          title: 'Termen estimativ de livrare',
+          body: (
+            <p>
+              Comenzile sunt procesate în {SITE_LEGAL.processingTime}, iar
+              livrarea prin curier durează, în general,{' '}
+              {SITE_LEGAL.deliveryEstimate} de la confirmarea comenzii, în funcție
+              de localitate și de disponibilitatea produselor. Vei primi
+              confirmarea expedierii și numărul AWB pentru urmărirea coletului.
             </p>
           ),
         },
@@ -78,41 +95,83 @@ export function ReturnsInfoPage() {
                   <Link to={SHOP_INFO_ROUTES.returnRequest}>
                     formularul de retur online
                   </Link>{' '}
-                  sau trimite o solicitare la{' '}
+                  cu numărul comenzii, datele de contact, motivul și un{' '}
+                  <strong>IBAN românesc valid</strong> (obligatoriu) pentru
+                  rambursare, sau scrie la{' '}
                   <a href={`mailto:${SITE_LEGAL.contactEmail}`}>
                     {SITE_LEGAL.contactEmail}
                   </a>
-                  , menționând numărul comenzii și produsele returnate.
+                  .
                 </li>
                 <li>
-                  Îți confirmăm adresa de retur și pașii de expediere a
-                  coletului.
+                  Un operator verifică dacă cererea este validă (asociată unei
+                  comenzi reale). După validare, primești pe email instrucțiunile
+                  de expediere (destinatar, telefon, adresă).
                 </li>
                 <li>
                   Ambalează produsul în siguranță, împreună cu accesoriile și
-                  documentele primite.
+                  documentele primite. Menționează numărul comenzii pe colet sau
+                  în documentele de expediere.
+                </li>
+                <li>
+                  Expediază coletul pe cheltuiala ta. După ce primim și
+                  verificăm returul, îți rambursăm suma totală a comenzii pe
+                  IBAN-ul din cerere.
                 </li>
               </ol>
+            </>
+          ),
+        },
+        {
+          title: 'Unde trimiți coletul',
+          body: (
+            <>
               <p>
-                <Link
-                  className="shop-btn shop-btn--primary"
-                  to={SHOP_INFO_ROUTES.returnRequest}
-                >
-                  Deschide formularul de retur
-                </Link>
+                Poți trimite coletul cu <strong>orice curier</strong>{' '}
+                (recomandăm DPD). Costul transportului de retur este suportat de
+                client. Pe AWB completează:
+              </p>
+              <ul>
+                <li>
+                  <strong>Destinatar:</strong> {SITE_LEGAL.operatorName} - retur
+                  comanda [numărul comenzii]
+                </li>
+                {SITE_LEGAL.returnPhone ? (
+                  <li>
+                    <strong>Telefon destinatar:</strong> {SITE_LEGAL.returnPhone}
+                  </li>
+                ) : null}
+                <li>
+                  <strong>Adresă:</strong> {SITE_LEGAL.returnAddress}
+                </li>
+              </ul>
+              <p>
+                Telefonul destinatar, adresa exactă și numărul comenzii îți sunt
+                confirmate pe email, după validarea cererii.
               </p>
             </>
+          ),
+        },
+        {
+          title: 'Condiții de expediere (obligatorii)',
+          body: (
+            <p>
+              <strong>Atenție:</strong> nu trimite coletul cu plata ramburs sau
+              cu taxele de transport neachitate. Nerespectarea acestei condiții
+              va duce la refuzul returului.
+            </p>
           ),
         },
         {
           title: 'Returnarea banilor',
           body: (
             <p>
-              Îți rambursăm toate sumele primite, inclusiv costul standard de
-              livrare, în cel mult 14 zile de la data la care ne informezi despre
-              retragere. Putem amâna rambursarea până la primirea produsului sau
-              până ne dovedești că l-ai expediat. Costul direct al returnării
-              produsului este suportat de client, dacă nu s-a convenit altfel.
+              După primirea și verificarea coletului, îți rambursăm suma totală
+              a comenzii (produse + livrarea inițială) prin transfer bancar pe
+              IBAN-ul obligatoriu din cererea de retur, în cel mult 14 zile.
+              Costul transportului pentru retur rămâne în sarcina ta. Putem
+              amâna rambursarea până la primirea produsului sau până ne
+              dovedești că l-ai expediat.
             </p>
           ),
         },
@@ -241,7 +300,13 @@ export function FaqInfoPage() {
         },
         {
           title: 'Cum plătesc comanda?',
-          body: <p>Plata se face la livrare, conform {SITE_LEGAL.deliverySummary}</p>,
+          body: (
+            <p>
+              Poți plăti <strong>ramburs la livrare</strong> (numerar sau card
+              la curier) sau <strong>online cu cardul</strong> prin Netopia, la
+              finalizarea comenzii.
+            </p>
+          ),
         },
         {
           title: 'Unde văd confirmarea comenzii?',
@@ -488,13 +553,12 @@ export function CookiesInfoPage() {
           title: 'Cookie-uri de marketing (opționale)',
           body: (
             <p>
-              Dacă alegi „Accept toate”, încărcăm scripturi de marketing de la
-              terți pentru a măsura performanța reclamelor și a afișa anunțuri
-              relevante: <strong>Meta Pixel</strong> (Meta Platforms Ireland
-              Ltd.) și <strong>TikTok Pixel</strong> (TikTok Technology
-              Limited). Acestea pot seta cookie-uri proprii și transmit către
-              furnizori evenimente precum vizualizarea unui produs, adăugarea în
-              coș și finalizarea comenzii. Aceste cookie-uri nu se activează dacă
+              <strong>Meta Pixel</strong> (Meta Platforms Ireland Ltd.) este
+              inclus în pagină pentru măsurarea reclamelor (PageView și
+              evenimente e-commerce). Dacă alegi „Accept toate”, încărcăm și{' '}
+              <strong>Google Analytics 4</strong> (Google Ireland Ltd.) și{' '}
+              <strong>TikTok Pixel</strong> (TikTok Technology Limited). Acestea
+              pot seta cookie-uri proprii. GA4 și TikTok nu se activează dacă
               alegi „Doar esențiale”.
             </p>
           ),

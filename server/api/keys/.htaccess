@@ -1,0 +1,2 @@
+# Blocheaza accesul direct la cheile private
+Deny from all

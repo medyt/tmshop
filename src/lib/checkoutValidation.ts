@@ -1,27 +1,61 @@
 import type { CheckoutCustomer } from '../types/order'
-import type { DeliveryCarrierId } from './shippingCarriers'
+import { isValidRoCui } from './roCui'
+import { isValidRoPhone } from './roPhone'
+import { isDpdNomenclatureReady } from './roLocalities'
 
 export function getCheckoutValidationMessage(
   customer: CheckoutCustomer,
   acceptedTerms: boolean,
-  deliveryCarrier: DeliveryCarrierId | null,
+  paymentMethod?: 'cod' | 'card',
 ): string | null {
+  if (!isDpdNomenclatureReady()) {
+    return 'Listele de județe/localități DPD nu sunt încărcate. Reîncarcă pagina și încearcă din nou.'
+  }
+
   const missing: string[] = []
 
-  if (customer.name.trim().length <= 1) {
-    missing.push('numele complet')
+  if (customer.lastName.trim().length < 2) {
+    missing.push('numele')
   }
 
-  if (customer.phone.trim().length < 6) {
-    missing.push('telefonul')
+  if (customer.firstName.trim().length < 2) {
+    missing.push('prenumele')
   }
 
-  if (customer.address.trim().length <= 5) {
-    missing.push('adresa de livrare')
+  if (!isValidRoPhone(customer.phone)) {
+    missing.push('telefonul (exact 10 cifre, începe cu 0)')
   }
 
-  if (!deliveryCarrier) {
-    missing.push('curierul de livrare')
+  if (paymentMethod === 'card') {
+    const email = customer.email.trim()
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      missing.push('emailul (obligatoriu pentru plata cu cardul)')
+    }
+  }
+
+  if (customer.billingType === 'company') {
+    if (customer.companyName.trim().length < 2) {
+      missing.push('denumirea firmei')
+    }
+    if (!isValidRoCui(customer.companyCui)) {
+      missing.push('CUI-ul firmei (valid)')
+    }
+  }
+
+  if (!customer.county.trim()) {
+    missing.push('județul')
+  }
+
+  if (!customer.city.trim()) {
+    missing.push('localitatea')
+  }
+
+  if (customer.street.trim().length < 2) {
+    missing.push('strada')
+  }
+
+  if (!customer.streetNumber.trim()) {
+    missing.push('numărul')
   }
 
   if (!acceptedTerms) {

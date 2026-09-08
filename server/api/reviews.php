@@ -13,8 +13,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
+function shoptop_column_exists(PDO $pdo, string $table, string $column): bool
+{
+    $stmt = $pdo->prepare(
+        'SELECT 1
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = :table_name
+           AND COLUMN_NAME = :column_name
+         LIMIT 1'
+    );
+    $stmt->execute([
+        'table_name' => $table,
+        'column_name' => $column,
+    ]);
+    return (bool) $stmt->fetchColumn();
+}
+
 try {
     $pdo = shoptop_pdo();
+    $hasImageUrl = shoptop_column_exists($pdo, 'product_reviews', 'image_url');
 
     if ($method === 'GET') {
         $admin = trim((string) ($_GET['admin'] ?? ''));
@@ -27,8 +45,12 @@ try {
             } elseif ($status === 'approved') {
                 $where = 'WHERE approved = 1';
             }
+            $fields = 'id, product_id, author_name, rating, body, approved, created_at';
+            if ($hasImageUrl) {
+                $fields .= ', image_url';
+            }
             $stmt = $pdo->query(
-                'SELECT id, product_id, author_name, rating, body, approved, created_at
+                'SELECT ' . $fields . '
                  FROM product_reviews ' . $where . '
                  ORDER BY created_at DESC
                  LIMIT 200'
@@ -41,6 +63,7 @@ try {
                     'authorName' => (string) $row['author_name'],
                     'rating' => (int) $row['rating'],
                     'body' => (string) $row['body'],
+                    'imageUrl' => $hasImageUrl ? (string) ($row['image_url'] ?? '') : null,
                     'approved' => (int) $row['approved'] === 1,
                     'createdAt' => (string) $row['created_at'],
                 ];
@@ -73,8 +96,12 @@ try {
             shoptop_json_error('Parametrul productId este obligatoriu.', 400);
         }
 
+        $fields = 'id, product_id, author_name, rating, body, created_at';
+        if ($hasImageUrl) {
+            $fields .= ', image_url';
+        }
         $stmt = $pdo->prepare(
-            'SELECT id, product_id, author_name, rating, body, created_at
+            'SELECT ' . $fields . '
              FROM product_reviews
              WHERE product_id = :product_id AND approved = 1
              ORDER BY created_at DESC
@@ -89,6 +116,7 @@ try {
                 'authorName' => (string) $row['author_name'],
                 'rating' => (int) $row['rating'],
                 'body' => (string) $row['body'],
+                'imageUrl' => $hasImageUrl ? (string) ($row['image_url'] ?? '') : null,
                 'createdAt' => (string) $row['created_at'],
             ];
         }
@@ -129,6 +157,8 @@ try {
         $productId = trim((string) ($body['productId'] ?? ''));
         $authorName = trim((string) ($body['authorName'] ?? ''));
         $reviewBody = trim((string) ($body['body'] ?? ''));
+        $imageUrl = trim((string) ($body['imageUrl'] ?? ''));
+        $imageUrl = $hasImageUrl ? shoptop_normalize_image_url($imageUrl) : '';
         $rating = is_numeric($body['rating'] ?? null)
             ? (int) floor((float) $body['rating'])
             : 0;
@@ -146,16 +176,30 @@ try {
             shoptop_json_error('Produsul nu a fost gasit.', 404);
         }
 
-        $stmt = $pdo->prepare(
-            'INSERT INTO product_reviews (product_id, author_name, rating, body, approved)
-             VALUES (:product_id, :author_name, :rating, :body, 0)'
-        );
-        $stmt->execute([
-            'product_id' => $productId,
-            'author_name' => $authorName,
-            'rating' => $rating,
-            'body' => $reviewBody,
-        ]);
+        if ($hasImageUrl) {
+            $stmt = $pdo->prepare(
+                'INSERT INTO product_reviews (product_id, author_name, rating, body, image_url, approved)
+                 VALUES (:product_id, :author_name, :rating, :body, :image_url, 0)'
+            );
+            $stmt->execute([
+                'product_id' => $productId,
+                'author_name' => $authorName,
+                'rating' => $rating,
+                'body' => $reviewBody,
+                'image_url' => $imageUrl !== '' ? $imageUrl : null,
+            ]);
+        } else {
+            $stmt = $pdo->prepare(
+                'INSERT INTO product_reviews (product_id, author_name, rating, body, approved)
+                 VALUES (:product_id, :author_name, :rating, :body, 0)'
+            );
+            $stmt->execute([
+                'product_id' => $productId,
+                'author_name' => $authorName,
+                'rating' => $rating,
+                'body' => $reviewBody,
+            ]);
+        }
 
         // 200 in loc de 201: unele proxy / gazduiri trateaza altfel raspunsul.
         shoptop_json_response(['ok' => true], 200);

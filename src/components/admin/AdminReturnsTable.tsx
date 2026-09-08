@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { formatRon } from '../../lib/shopCatalog'
 import type { ReturnRequest, ReturnStatus } from '../../lib/returnsApi'
 
 const STATUS_LABEL: Record<ReturnStatus, string> = {
-  nou: 'Nou',
-  aprobat: 'Aprobat',
-  respins: 'Respins',
-  finalizat: 'Finalizat',
+  nou: 'De validat',
+  aprobat: 'Validată',
+  respins: 'Respinsă',
+  finalizat: 'Finalizată',
 }
 
 const STATUS_ORDER: Record<ReturnStatus, number> = {
@@ -47,7 +48,7 @@ type SortKey = 'date' | 'order' | 'customer' | 'status' | 'reason'
 
 type Props = {
   returns: ReturnRequest[]
-  onStatusChange: (id: number, status: ReturnStatus) => void
+  onEdit: (item: ReturnRequest) => void
   onDelete: (id: number) => void
 }
 
@@ -108,11 +109,34 @@ function SortButton({
   )
 }
 
-export function AdminReturnsTable({
-  returns,
-  onStatusChange,
-  onDelete,
-}: Props) {
+function orderAdminLink(orderId: string): string {
+  return `/admin/comenzi?tab=all&q=${encodeURIComponent(orderId)}`
+}
+
+function OrderLinkCell({ item }: { item: ReturnRequest }) {
+  return (
+    <div className="return-table__order-cell">
+      <Link className="cell-order-id" to={orderAdminLink(item.orderId)}>
+        {item.orderId}
+      </Link>
+      {item.orderExists === true ? (
+        <span className="cell-sku return-table__order-meta">
+          {typeof item.orderTotalAmount === 'number'
+            ? formatRon(item.orderTotalAmount)
+            : 'comandă OK'}
+        </span>
+      ) : item.orderExists === false ? (
+        <span
+          className="cell-sku return-table__order-meta return-table__order-meta--missing"
+        >
+          fără comandă
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
+export function AdminReturnsTable({ returns, onEdit, onDelete }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('date')
   const [sortDir, setSortDir] = useState<1 | -1>(-1)
   const [search, setSearch] = useState('')
@@ -180,7 +204,7 @@ export function AdminReturnsTable({
         </div>
       ) : (
         <>
-          <div className="table-wrap">
+          <div className="table-wrap table-wrap--returns">
             <table className="data-table data-table--returns">
               <thead>
                 <tr>
@@ -237,9 +261,7 @@ export function AdminReturnsTable({
                     <tr key={item.id}>
                       <td className="cell-nowrap">{formatReturnDate(item.createdAt)}</td>
                       <td>
-                        <Link className="cell-order-id" to="/admin/comenzi">
-                          {item.orderId}
-                        </Link>
+                        <OrderLinkCell item={item} />
                       </td>
                       <td className="return-table__cell-customer">
                         <span className="cell-title">{item.customerName}</span>
@@ -270,23 +292,9 @@ export function AdminReturnsTable({
                           <button
                             type="button"
                             className="btn primary btn--sm"
-                            onClick={() => onStatusChange(item.id, 'aprobat')}
+                            onClick={() => onEdit(item)}
                           >
-                            Aprobă
-                          </button>
-                          <button
-                            type="button"
-                            className="btn secondary btn--sm"
-                            onClick={() => onStatusChange(item.id, 'respins')}
-                          >
-                            Respinge
-                          </button>
-                          <button
-                            type="button"
-                            className="btn secondary btn--sm"
-                            onClick={() => onStatusChange(item.id, 'finalizat')}
-                          >
-                            Finalizat
+                            Editează
                           </button>
                           <button
                             type="button"
@@ -314,11 +322,23 @@ export function AdminReturnsTable({
                       <div>
                         <strong>
                           Comandă{' '}
-                          <Link className="cell-order-id" to="/admin/comenzi">
+                          <Link
+                            className="cell-order-id"
+                            to={orderAdminLink(item.orderId)}
+                          >
                             {item.orderId}
                           </Link>
                         </strong>
                         <div className="muted">{formatReturnDate(item.createdAt)}</div>
+                        {item.orderExists === true &&
+                        typeof item.orderTotalAmount === 'number' ? (
+                          <div className="muted">{formatRon(item.orderTotalAmount)}</div>
+                        ) : null}
+                        {item.orderExists === false ? (
+                          <div className="app-status app-status--error">
+                            Fără comandă asociată
+                          </div>
+                        ) : null}
                       </div>
                       <ReturnStatusBadge status={item.status} />
                     </div>
@@ -349,23 +369,9 @@ export function AdminReturnsTable({
                       <button
                         type="button"
                         className="btn primary btn--sm"
-                        onClick={() => onStatusChange(item.id, 'aprobat')}
+                        onClick={() => onEdit(item)}
                       >
-                        Aprobă
-                      </button>
-                      <button
-                        type="button"
-                        className="btn secondary btn--sm"
-                        onClick={() => onStatusChange(item.id, 'respins')}
-                      >
-                        Respinge
-                      </button>
-                      <button
-                        type="button"
-                        className="btn secondary btn--sm"
-                        onClick={() => onStatusChange(item.id, 'finalizat')}
-                      >
-                        Finalizat
+                        Editează
                       </button>
                       <button
                         type="button"

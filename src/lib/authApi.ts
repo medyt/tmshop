@@ -17,11 +17,14 @@ export function isAuthApiEnabled(): boolean {
 
 export async function fetchCurrentUser(): Promise<User | null> {
   const res = await apiFetch('/auth.php', {}, { credentials: 'include' })
+  // Compat: vechiul API răspundea 401 când nu exista sesiune.
   if (res.status === 401) return null
   if (!res.ok) {
     throw new Error(await readErrorMessage(res))
   }
-  return parseUser(await res.json())
+  const data: unknown = await res.json()
+  if (data === null) return null
+  return parseUser(data)
 }
 
 export async function loginUser(email: string, password: string): Promise<User> {
@@ -43,10 +46,16 @@ export async function loginUser(email: string, password: string): Promise<User> 
   return user
 }
 
+export type RegisterResult = {
+  user: User
+  /** True dacă serverul a predat emailul de confirmare către client. */
+  confirmationEmailSent: boolean
+}
+
 export async function registerUser(
   email: string,
   password: string,
-): Promise<User> {
+): Promise<RegisterResult> {
   const res = await apiFetch(
     '/auth.php',
     {
@@ -58,11 +67,15 @@ export async function registerUser(
   if (!res.ok) {
     throw new Error(await readErrorMessage(res))
   }
-  const user = parseUser(await res.json())
+  const data = (await res.json()) as Record<string, unknown>
+  const user = parseUser(data)
   if (!user) {
     throw new Error('Raspuns invalid de la server.')
   }
-  return user
+  return {
+    user,
+    confirmationEmailSent: data.confirmationEmailSent === true,
+  }
 }
 
 export async function logoutUser(): Promise<void> {

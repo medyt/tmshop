@@ -1,0 +1,5 @@
+# Nu commitam cheile private reale - doar exemplele
+*.key
+*.cer
+!.gitignore
+!.htaccess

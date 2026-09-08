@@ -1,12 +1,37 @@
 import { clampImageUrls, normalizeImageUrl } from './productImages'
 import type {
-  CostSupplier,
-  MarketObservation,
+  BundleOffer,
+  BundleOfferBadge,
+  BundleOfferMode,
   Product,
 } from '../types/product'
 
-function isCostSupplier(x: unknown): x is CostSupplier {
-  return x === 'A' || x === 'B' || x === 'lower'
+function toNumberOrUndefined(x: unknown): number | undefined {
+  if (x === undefined || x === null || x === '') return undefined
+  const n = typeof x === 'number' ? x : Number(x)
+  return Number.isFinite(n) ? n : undefined
+}
+
+/**
+ * Prețul de achiziție. Acceptă și backup-urile vechi cu `supplierPriceA/B` +
+ * `costSupplier` (le mapează la un singur cost) pentru compatibilitate la import.
+ */
+function purchasePriceFromRecord(o: Record<string, unknown>): number | null {
+  const direct = toNumberOrUndefined(o.purchasePrice)
+  if (direct !== undefined) return direct
+
+  const a = toNumberOrUndefined(o.supplierPriceA)
+  const b = toNumberOrUndefined(o.supplierPriceB)
+  if (a === undefined && b === undefined) return null
+
+  const av = a ?? 0
+  const bv = b ?? 0
+  const which = o.costSupplier
+  if (which === 'A') return av
+  if (which === 'B') return bv
+  // „lower” sau necunoscut: alege valoarea nenulă, altfel minimul.
+  if (av > 0 && bv > 0) return Math.min(av, bv)
+  return av > 0 ? av : bv
 }
 
 function imageUrlsFromRecord(o: Record<string, unknown>): string[] {
@@ -26,81 +51,49 @@ function imageUrlsFromRecord(o: Record<string, unknown>): string[] {
   return clampImageUrls(raw.map((url) => normalizeImageUrl(url)))
 }
 
-function parseMarketObservations(
-  o: Record<string, unknown>,
-): MarketObservation[] | undefined {
-  if (Array.isArray(o.marketObservations)) {
-    const out: MarketObservation[] = []
-    for (const item of o.marketObservations) {
-      if (!item || typeof item !== 'object') continue
-      const r = item as Record<string, unknown>
-      const price =
-        typeof r.price === 'number' ? r.price : Number(r.price)
-      if (!Number.isFinite(price)) continue
-      out.push({
-        price,
-        sourceUrl:
-          typeof r.sourceUrl === 'string' ? r.sourceUrl : undefined,
-        observedAt:
-          typeof r.observedAt === 'string' ? r.observedAt : undefined,
-        note: typeof r.note === 'string' ? r.note : undefined,
-      })
-    }
-    return out.length ? out : undefined
-  }
+function isBundleOfferMode(x: unknown): x is BundleOfferMode {
+  return x === 'fixed_total' || x === 'percent_off'
+}
 
-  let legacyPrice: number | undefined
-  if (o.marketPrice !== undefined && o.marketPrice !== null) {
-    const m =
-      typeof o.marketPrice === 'number'
-        ? o.marketPrice
-        : Number(o.marketPrice)
-    if (Number.isFinite(m)) legacyPrice = m
+function isBundleOfferBadge(x: unknown): x is BundleOfferBadge {
+  return x === 'popular' || x === 'best'
+}
+
+function parseBundleOffers(o: Record<string, unknown>): BundleOffer[] | undefined {
+  if (!Array.isArray(o.bundleOffers)) return undefined
+  const out: BundleOffer[] = []
+  for (const item of o.bundleOffers) {
+    if (!item || typeof item !== 'object') continue
+    const r = item as Record<string, unknown>
+    const qtyRaw = r.qty
+    const qty = typeof qtyRaw === 'number' ? qtyRaw : Number(qtyRaw)
+    if (qty !== 2 && qty !== 3) continue
+
+    if (!isBundleOfferMode(r.mode)) continue
+    const valueRaw = r.value
+    const value = typeof valueRaw === 'number' ? valueRaw : Number(valueRaw)
+    if (!Number.isFinite(value) || value <= 0) continue
+
+    out.push({
+      qty,
+      enabled: Boolean(r.enabled),
+      mode: r.mode,
+      value: Math.round(value * 100) / 100,
+      title: typeof r.title === 'string' && r.title.trim() ? r.title.trim() : undefined,
+      badge: isBundleOfferBadge(r.badge) ? r.badge : undefined,
+    })
   }
-  if (legacyPrice !== undefined) {
-    return [
-      {
-        price: legacyPrice,
-        sourceUrl:
-          typeof o.marketSourceUrl === 'string'
-            ? o.marketSourceUrl
-            : undefined,
-        observedAt:
-          typeof o.marketObservedAt === 'string'
-            ? o.marketObservedAt
-            : undefined,
-      },
-    ]
-  }
-  return undefined
+  return out.length ? out : undefined
 }
 
 /** Folosit la import JSON și la încărcare din localStorage (inclus migrare `imageUrl`). */
 export function parseProductRecord(o: Record<string, unknown>): Product | null {
   if (typeof o.id !== 'string' || typeof o.name !== 'string') return null
-  const supplierPriceA =
-    typeof o.supplierPriceA === 'number'
-      ? o.supplierPriceA
-      : o.supplierPriceA === undefined
-        ? 0
-        : Number(o.supplierPriceA)
-  const supplierPriceB =
-    typeof o.supplierPriceB === 'number'
-      ? o.supplierPriceB
-      : o.supplierPriceB === undefined
-        ? 0
-        : Number(o.supplierPriceB)
+  const purchasePrice = purchasePriceFromRecord(o) ?? 0
   const salePrice =
     typeof o.salePrice === 'number' ? o.salePrice : Number(o.salePrice)
-  if (
-    !Number.isFinite(supplierPriceA) ||
-    !Number.isFinite(supplierPriceB) ||
-    !Number.isFinite(salePrice)
-  )
+  if (!Number.isFinite(purchasePrice) || !Number.isFinite(salePrice))
     return null
-  const costSupplier = isCostSupplier(o.costSupplier)
-    ? o.costSupplier
-    : 'lower'
 
   let stockQty = 0
   if (o.stockQty !== undefined && o.stockQty !== null) {
@@ -134,9 +127,7 @@ export function parseProductRecord(o: Record<string, unknown>): Product | null {
         : undefined,
     mpn:
       typeof o.mpn === 'string' && o.mpn.trim() ? o.mpn.trim() : undefined,
-    supplierPriceA,
-    supplierPriceB,
-    costSupplier,
+    purchasePrice,
     salePrice,
     discountPercent,
     stockQty,
@@ -150,8 +141,8 @@ export function parseProductRecord(o: Record<string, unknown>): Product | null {
       typeof o.description === 'string' && o.description.trim()
         ? o.description.trim()
         : undefined,
-    marketObservations: parseMarketObservations(o),
     notes: typeof o.notes === 'string' ? o.notes : undefined,
+    bundleOffers: parseBundleOffers(o),
   }
 }
 

@@ -11,7 +11,6 @@ import { useShopNotice } from '../components/shop/ShopNoticeProvider'
 import { useCart } from '../contexts/CartContext'
 import { usePageMeta } from '../hooks/usePageMeta'
 import { useProductRatings } from '../hooks/useProductRatings'
-import { trackAddToCart } from '../lib/analytics'
 import { primaryImageUrl } from '../lib/productImages'
 import { productPagePath } from '../lib/shopProductRoutes'
 import {
@@ -21,8 +20,11 @@ import {
 } from '../lib/seo'
 import {
   collectProductCategories,
+  displayStock,
   isListedInShop,
   productCategoryLabel,
+  shopQtyAvailableUnit,
+  shopQtyUnit,
 } from '../lib/shopCatalog'
 import { SITE_LEGAL } from '../lib/siteLegal'
 import type { Product } from '../types/product'
@@ -49,7 +51,7 @@ export function ShopHomePage({ products }: ShopHomePageProps) {
   usePageMeta({
     title: `${SITE_LEGAL.brandName} — magazin online`,
     description:
-      'Magazin online cu produse în stoc, livrare prin Fan Courier sau DPD și plată la livrare în România.',
+      'Magazin online cu produse în stoc, livrare prin curier și plată ramburs sau cu cardul în România.',
     path: '/',
     jsonLd: homeJsonLd,
   })
@@ -99,7 +101,7 @@ export function ShopHomePage({ products }: ShopHomePageProps) {
     return sorted
   }, [category, products, query, sort])
 
-  /** „Cele mai vândute”: până avem statistici reale din comenzi, afișăm produse listate cu discount mare și stoc bun. */
+  /** „Cele mai vândute”: până avem statistici reale din comenzi, afișăm produse listate cu procent de reducere mare și stoc bun. */
   const bestsellerProducts = useMemo(() => {
     const list = products.filter(isListedInShop)
     const sorted = [...list]
@@ -114,9 +116,27 @@ export function ShopHomePage({ products }: ShopHomePageProps) {
   }, [products])
 
   const handleAddToCart = (product: Product) => {
-    addProduct(product)
-    trackAddToCart(product.id, 1, product.salePrice)
-    notify(`${product.name || 'Produsul'} a fost adăugat în coș.`, 'Adăugat în coș')
+    const result = addProduct(product)
+    if (!result) {
+      notify(
+        'Produsul nu poate fi adăugat în coș (lipsește stoc sau nu este disponibil).',
+        'Coș',
+      )
+      return
+    }
+    if (result.quantityIncreased) {
+      notify(
+        `${product.name || 'Produsul'} — ${result.quantityInCart} ${shopQtyUnit(product.name, result.quantityInCart)} în coș.`,
+        'Adăugat în coș',
+        { label: 'Vezi coșul', to: '/cos' },
+      )
+    } else {
+      notify(
+        `Ai deja în coș cantitatea maximă pentru acest produs (${result.maxStock} ${shopQtyAvailableUnit(product.name, result.maxStock)} în stoc).`,
+        'Coș',
+        { label: 'Vezi coșul', to: '/cos' },
+      )
+    }
   }
 
   return (
@@ -126,15 +146,12 @@ export function ShopHomePage({ products }: ShopHomePageProps) {
           <h1 className="shop-hero__title">Produse în stoc, gata de comandă.</h1>
           <p className="shop-hero__lead">
             Alege din catalog, adaugă în coș și finalizează comanda cu livrare
-            prin Fan Courier sau DPD și plată la livrare.
+            prin curier și plată ramburs sau cu cardul.
           </p>
           <div className="shop-hero__cta">
             <a className="shop-btn shop-btn--primary" href="#catalog">
               Vezi produsele
             </a>
-            <Link className="shop-btn shop-btn--ghost" to="/cos">
-              Deschide coșul
-            </Link>
           </div>
         </div>
       </section>
@@ -196,7 +213,7 @@ export function ShopHomePage({ products }: ShopHomePageProps) {
               <option value="name-asc">Nume A–Z</option>
               <option value="price-asc">Preț crescător</option>
               <option value="price-desc">Preț descrescător</option>
-              <option value="discount-desc">Discount mare</option>
+              <option value="discount-desc">Procent reducere (mare → mic)</option>
             </select>
           </label>
         </div>
@@ -261,6 +278,11 @@ export function ShopHomePage({ products }: ShopHomePageProps) {
                       reviewCount={rating.reviewCount}
                     />
                   ) : null}
+
+                  <p className="shop-card__hint muted">
+                    În stoc: {displayStock(product)}{' '}
+                    {shopQtyUnit(product.name, displayStock(product))}
+                  </p>
 
                   <div className="shop-card__price-row">
                     <ShopProductPrice product={product} showDiscountBadge />

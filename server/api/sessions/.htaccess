@@ -1,0 +1,2 @@
+# Blochează accesul HTTP la fișierele de sesiune.
+Deny from all

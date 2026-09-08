@@ -1,11 +1,13 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ShopLayout } from '../components/shop/ShopLayout'
+import { useShopNotice } from '../components/shop/ShopNoticeProvider'
 import { useAuth } from '../contexts/AuthContext'
 
 export function RegisterPage() {
   const navigate = useNavigate()
   const { register } = useAuth()
+  const { notify } = useShopNotice()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -17,7 +19,18 @@ export function RegisterPage() {
     setSubmitting(true)
     setError(null)
     try {
-      await register(email, password)
+      const { confirmationEmailSent } = await register(email, password)
+      if (confirmationEmailSent) {
+        notify(
+          'Ți-am trimis un email de confirmare la adresa introdusă. Verifică și folderul Spam.',
+          'Cont creat',
+        )
+      } else {
+        notify(
+          'Contul a fost creat, dar emailul de confirmare nu s-a putut trimite automat. Dacă nu primești mesajul în câteva minute, scrie-ne.',
+          'Cont creat',
+        )
+      }
       navigate('/')
     } catch (err: unknown) {
       const message =
@@ -34,7 +47,8 @@ export function RegisterPage() {
         <div className="shop-page__head">
           <h1 className="shop-page__title">Înregistrare</h1>
           <p className="shop-page__lead muted">
-            Creează un cont de client cu email și parolă.
+            Creează un cont de client cu email și parolă. După înregistrare
+            primești un email de confirmare la adresa folosită.
           </p>
         </div>
 

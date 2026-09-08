@@ -7,6 +7,7 @@ import {
   isReturnsApiEnabled,
   submitReturnRequest,
 } from '../../lib/returnsApi'
+import { isValidRoIban, normalizeRoIban } from '../../lib/roIban'
 import { SHOP_INFO_ROUTES, SITE_LEGAL } from '../../lib/siteLegal'
 
 const emptyForm = {
@@ -48,6 +49,14 @@ export function ReturnRequestPage() {
       notify('Te rugăm să specifici motivul returului.', 'Date incomplete')
       return
     }
+    const iban = normalizeRoIban(form.iban)
+    if (!iban || !isValidRoIban(iban)) {
+      notify(
+        'Completează un IBAN românesc valid (24 caractere, începe cu RO). Aici vom rambursa banii.',
+        'IBAN invalid',
+      )
+      return
+    }
     if (!isReturnsApiEnabled()) {
       setError('Trimiterea cererilor necesită API-ul configurat pe server.')
       return
@@ -62,7 +71,7 @@ export function ReturnRequestPage() {
         customerEmail: form.customerEmail.trim(),
         customerPhone: form.customerPhone.trim() || undefined,
         reason: form.reason.trim(),
-        iban: form.iban.trim() || undefined,
+        iban,
         items: form.items.trim() || undefined,
       })
       setDone(true)
@@ -85,8 +94,11 @@ export function ReturnRequestPage() {
           <div className="shop-empty-panel">
             <h1 className="shop-page__title">Cerere trimisă</h1>
             <p className="muted">
-              Am primit cererea ta de retur. Te contactăm în cel mai scurt timp cu
-              pașii următori.
+              Am primit cererea ta de retur. După ce un operator o validează
+              (asociere cu comanda), primești pe email adresa la care trimiți
+              coletul. Costul transportului de retur este suportat de tine; după
+              ce primim coletul, îți rambursăm suma totală a comenzii pe IBAN-ul
+              din cerere.
             </p>
             <Link className="shop-btn shop-btn--primary" to="/">
               Înapoi la magazin
@@ -104,7 +116,8 @@ export function ReturnRequestPage() {
           <h1 className="shop-page__title">Cerere de retur</h1>
           <p className="shop-page__lead muted">
             Ai 14 zile de la primirea produsului să soliciți returul. Completează
-            datele de mai jos. Detalii în{' '}
+            datele de mai jos — validăm cererea, apoi îți trimitem pe email
+            adresa de retur. Detalii în{' '}
             <Link to={SHOP_INFO_ROUTES.returns}>politica de retur</Link>.
           </p>
         </div>
@@ -116,7 +129,7 @@ export function ReturnRequestPage() {
               <input
                 value={form.orderId}
                 onChange={(e) => update('orderId', e.target.value)}
-                placeholder="ex. ord-..."
+                placeholder="ex. 482917"
                 required
               />
             </label>
@@ -166,12 +179,21 @@ export function ReturnRequestPage() {
               />
             </label>
             <label className="shop-field shop-field--wide">
-              <span>IBAN pentru rambursare (opțional)</span>
+              <span>IBAN pentru rambursare</span>
               <input
                 value={form.iban}
                 onChange={(e) => update('iban', e.target.value)}
-                placeholder="RO..."
+                placeholder="RO49 BANK … (24 caractere)"
+                autoComplete="off"
+                spellCheck={false}
+                inputMode="text"
+                required
+                aria-required="true"
               />
+              <span className="muted small">
+                Obligatoriu — aici transferăm suma totală a comenzii după ce
+                primim coletul.
+              </span>
             </label>
           </div>
 

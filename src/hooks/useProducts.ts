@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Product } from '../types/product'
-import { mergeSeedProducts } from '../data/seedProducts'
+import { useAuth } from '../contexts/AuthContext'
 import {
   createProduct,
   deleteProductRemote,
@@ -11,12 +11,18 @@ import {
 } from '../lib/productsApi'
 import { loadProducts, saveProducts } from '../lib/storage'
 
+/** Păstrează lista ușoară — description se încarcă pe detaliu / edit. */
+function withoutHeavyFields(product: Product): Product {
+  const { description: _d, notes: _n, ...rest } = product
+  return rest
+}
+
 export function useProducts() {
   const apiEnabled = isProductsApiEnabled()
+  const { isAdmin } = useAuth()
   const [products, setProducts] = useState<Product[]>(() => {
     if (apiEnabled) return []
-    const loaded = loadProducts() ?? []
-    return mergeSeedProducts(loaded)
+    return loadProducts() ?? []
   })
   const [loading, setLoading] = useState(apiEnabled)
   const [error, setError] = useState<string | null>(null)
@@ -44,7 +50,7 @@ export function useProducts() {
         const message =
           err instanceof Error
             ? err.message
-            : 'Nu am putut incarca produsele din MySQL.'
+            : 'Nu am putut încărca produsele.'
         setError(message)
       })
       .finally(() => {
@@ -54,8 +60,8 @@ export function useProducts() {
     return () => {
       cancelled = true
     }
-  }, [apiEnabled])
-
+    // Reîncarcă când adminul se autentifică (câmpuri sensibile: EAN, preț achiziție).
+  }, [apiEnabled, isAdmin])
   const reloadProducts = useCallback(() => {
     if (!apiEnabled) return
 
@@ -70,7 +76,7 @@ export function useProducts() {
         const message =
           err instanceof Error
             ? err.message
-            : 'Nu am putut reincarca produsele din MySQL.'
+            : 'Nu am putut reîncărca produsele.'
         setError(message)
       })
       .finally(() => {
@@ -83,14 +89,14 @@ export function useProducts() {
       if (apiEnabled) {
         void createProduct(p)
           .then((saved) => {
-            setProducts((prev) => [...prev, saved])
+            setProducts((prev) => [...prev, withoutHeavyFields(saved)])
             setError(null)
           })
           .catch((err: unknown) => {
             const message =
               err instanceof Error
                 ? err.message
-                : 'Nu am putut salva produsul in MySQL.'
+                : 'Nu am putut salva produsul.'
             setError(message)
           })
         return
@@ -105,8 +111,9 @@ export function useProducts() {
       if (apiEnabled) {
         void updateProductRemote(p)
           .then((saved) => {
+            const light = withoutHeavyFields(saved)
             setProducts((prev) =>
-              prev.map((x) => (x.id === saved.id ? saved : x)),
+              prev.map((x) => (x.id === light.id ? light : x)),
             )
             setError(null)
           })
@@ -114,7 +121,7 @@ export function useProducts() {
             const message =
               err instanceof Error
                 ? err.message
-                : 'Nu am putut actualiza produsul in MySQL.'
+                : 'Nu am putut actualiza produsul.'
             setError(message)
           })
         return
@@ -136,7 +143,7 @@ export function useProducts() {
             const message =
               err instanceof Error
                 ? err.message
-                : 'Nu am putut sterge produsul din MySQL.'
+                : 'Nu am putut șterge produsul.'
             setError(message)
           })
         return
@@ -151,14 +158,14 @@ export function useProducts() {
       if (apiEnabled) {
         void replaceAllProductsRemote(next)
           .then(() => {
-            setProducts(next)
+            setProducts(next.map(withoutHeavyFields))
             setError(null)
           })
           .catch((err: unknown) => {
             const message =
               err instanceof Error
                 ? err.message
-                : 'Nu am putut importa produsele in MySQL.'
+                : 'Nu am putut importa produsele.'
             setError(message)
           })
         return

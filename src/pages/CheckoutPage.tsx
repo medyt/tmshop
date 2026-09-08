@@ -1,41 +1,63 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ShopLayout } from '../components/shop/ShopLayout'
-import { ShippingCarrierPicker } from '../components/shop/ShippingCarrierPicker'
 import { useShopNotice } from '../components/shop/ShopNoticeProvider'
 import { useAuth } from '../contexts/AuthContext'
 import { useCart } from '../contexts/CartContext'
 import { usePageMeta } from '../hooks/usePageMeta'
 import { trackBeginCheckout, trackPurchase } from '../lib/analytics'
+import { metaCatalogId, metaContentsFromOrderItems } from '../lib/metaCatalogCsv'
+import { toCheckoutApiCustomer } from '../lib/checkoutAddress'
 import { getCheckoutValidationMessage } from '../lib/checkoutValidation'
 import { saveOrderAccessToken } from '../lib/orderAccess'
-import { createOrder, isOrdersApiEnabled, startCardPayment } from '../lib/ordersApi'
+import { createOrder, isOrdersApiEnabled, startCardPayment, redirectToCardPayment, abandonUnpaidCardOrder } from '../lib/ordersApi'
+import { sanitizeRoPhoneInput } from '../lib/roPhone'
 import type { PaymentMethod } from '../types/order'
 import { SHOP_INFO_ROUTES, SITE_LEGAL } from '../lib/siteLegal'
-import { formatRon } from '../lib/shopCatalog'
 import {
-  GIFT_ADDON_PRICE_RON,
-  giftAddonAmount,
-  orderTotal,
-  shippingCost,
-  shippingSummaryLabel,
-} from '../lib/shopShipping'
+  getCheckoutAddons,
+  loadCheckoutAddons,
+  selectedCheckoutAddonIds,
+  selectedCheckoutAddons,
+  type CheckoutAddonDef,
+  type CheckoutAddonId,
+  type CheckoutAddonsSelection,
+} from '../lib/checkoutAddons'
 import {
-  getDeliveryCarrierLabel,
-  type DeliveryCarrierId,
-} from '../lib/shippingCarriers'
+  getRoCounties,
+  getRoLocalities,
+  loadDpdLocalities,
+  loadDpdNomenclature,
+  localitySelectKey,
+  resolveDpdSite,
+  resolveLocality,
+} from '../lib/roLocalities'
+import { cartLineTotal, formatRon } from '../lib/shopCatalog'
+import { orderTotal, shippingCost, shippingSummaryLabel } from '../lib/shopShipping'
+import { FreeShippingHint } from '../components/shop/FreeShippingHint'
 import type { CheckoutCustomer } from '../types/order'
+import { saveCheckoutDraft, isCheckoutDraftEmail } from '../lib/checkoutDrafts'
 
 type CheckoutPageProps = {
   onOrderComplete?: () => void
 }
 
 const emptyCustomer: CheckoutCustomer = {
-  name: '',
+  firstName: '',
+  lastName: '',
   email: '',
   phone: '',
-  address: '',
+  county: '',
+  city: '',
+  street: '',
+  streetNumber: '',
+  addressExtra: '',
+  postalCode: '',
   notes: '',
+  billingType: 'person',
+  companyName: '',
+  companyCui: '',
+  companyRegCom: '',
 }
 
 export function CheckoutPage({ onOrderComplete }: CheckoutPageProps) {
@@ -43,31 +65,142 @@ export function CheckoutPage({ onOrderComplete }: CheckoutPageProps) {
   const { user, isCustomer } = useAuth()
   const { lines, subtotal, clearCart } = useCart()
   const [customer, setCustomer] = useState<CheckoutCustomer>(emptyCustomer)
-  const [deliveryCarrier, setDeliveryCarrier] = useState<DeliveryCarrierId | null>(
-    null,
-  )
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cod')
-  const [giftAddon, setGiftAddon] = useState(false)
+  const [checkoutAddons, setCheckoutAddons] = useState<CheckoutAddonsSelection>({})
+  const [addonCatalog, setAddonCatalog] = useState<CheckoutAddonDef[]>(() =>
+    getCheckoutAddons(),
+  )
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /** Blochează dublu-trimitere înainte ca setSubmitting(true) să fie vizibil în stare. */
+  const orderSubmitLockRef = useRef(false)
   const { notify } = useShopNotice()
+  const [nomenReady, setNomenReady] = useState(false)
+  const [nomenError, setNomenError] = useState<string | null>(null)
+  const [localitiesTick, setLocalitiesTick] = useState(0)
+  const [localitiesLoading, setLocalitiesLoading] = useState(false)
   const shipping = shippingCost(subtotal)
-  const giftLine = giftAddonAmount(giftAddon)
-  const total = orderTotal(subtotal, { giftAddon })
+  const selectedAddons = selectedCheckoutAddons(checkoutAddons)
+  const total = orderTotal(subtotal, { checkoutAddons })
+  const counties = useMemo(() => getRoCounties(), [nomenReady])
+  const localities = useMemo(
+    () => getRoLocalities(customer.county),
+    [customer.county, nomenReady, localitiesTick],
+  )
+
+  const reloadNomenclature = () => {
+    setNomenReady(false)
+    setNomenError(null)
+    void loadDpdNomenclature({ force: true })
+      .then(() => {
+        setNomenReady(true)
+        setNomenError(null)
+      })
+      .catch((err: unknown) => {
+        setNomenReady(false)
+        setNomenError(
+          err instanceof Error
+            ? err.message
+            : 'Nu am putut încărca localitățile DPD.',
+        )
+      })
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    void loadDpdNomenclature()
+      .then(() => {
+        if (!cancelled) {
+          setNomenReady(true)
+          setNomenError(null)
+        }
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setNomenReady(false)
+        setNomenError(
+          err instanceof Error
+            ? err.message
+            : 'Nu am putut încărca localitățile DPD.',
+        )
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    const county = customer.county.trim()
+    if (!nomenReady || !county) return
+    let cancelled = false
+    setLocalitiesLoading(true)
+    void loadDpdLocalities(county)
+      .then(() => {
+        if (!cancelled) setLocalitiesTick((n) => n + 1)
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setNomenError(
+            err instanceof Error
+              ? err.message
+              : 'Nu am putut încărca localitățile pentru județ.',
+          )
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLocalitiesLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [customer.county, nomenReady])
+
+  useEffect(() => {
+    let cancelled = false
+    void loadCheckoutAddons().then((addons) => {
+      if (!cancelled) setAddonCatalog(addons)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const updateCustomer = <K extends keyof CheckoutCustomer>(
+    key: K,
+    value: CheckoutCustomer[K],
+  ) => {
+    setCustomer((current) => ({ ...current, [key]: value }))
+  }
+
+  const toggleCheckoutAddon = (id: CheckoutAddonId) => {
+    setCheckoutAddons((current) => ({
+      ...current,
+      [id]: !current[id],
+    }))
+  }
 
   usePageMeta({
     title: `Checkout — ${SITE_LEGAL.brandName}`,
-    description: 'Finalizează comanda cu livrare prin curier și plată la livrare.',
+    description: 'Finalizează comanda cu livrare prin curier și plată ramburs sau cu cardul.',
     path: '/checkout',
     robots: 'noindex, nofollow',
   })
 
   useEffect(() => {
-    if (lines.length > 0) {
-      trackBeginCheckout(lines.length, subtotal)
-    }
-  }, [lines.length, subtotal])
+    if (lines.length === 0) return
+    const contents = lines
+      .map((line) => ({
+        id: metaCatalogId(line.product),
+        quantity: line.quantity,
+      }))
+      .filter((line) => line.id !== '')
+    const itemCount = lines.reduce((sum, line) => sum + line.quantity, 0)
+    const fire = () => trackBeginCheckout(itemCount, subtotal, contents)
+    fire()
+    window.addEventListener('shoptop:cookies-all', fire)
+    return () => window.removeEventListener('shoptop:cookies-all', fire)
+  }, [lines, subtotal])
 
   useEffect(() => {
     if (!isCustomer || !user?.email) return
@@ -75,6 +208,18 @@ export function CheckoutPage({ onOrderComplete }: CheckoutPageProps) {
       current.email.trim() ? current : { ...current, email: user.email },
     )
   }, [isCustomer, user?.email])
+
+  useEffect(() => {
+    if (!isCheckoutDraftEmail(customer.email) || lines.length === 0) return
+    const timer = window.setTimeout(() => {
+      void saveCheckoutDraft({
+        email: customer.email,
+        phone: customer.phone,
+        products: lines.map((line) => line.product),
+      })
+    }, 1500)
+    return () => window.clearTimeout(timer)
+  }, [customer.email, customer.phone, lines])
 
   if (lines.length === 0) {
     return (
@@ -93,19 +238,15 @@ export function CheckoutPage({ onOrderComplete }: CheckoutPageProps) {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (submitting) return
+    if (submitting || orderSubmitLockRef.current) return
 
     const validationMessage = getCheckoutValidationMessage(
       customer,
       acceptedTerms,
-      deliveryCarrier,
+      paymentMethod,
     )
     if (validationMessage) {
       notify(validationMessage, 'Date incomplete')
-      return
-    }
-
-    if (!deliveryCarrier) {
       return
     }
 
@@ -114,15 +255,18 @@ export function CheckoutPage({ onOrderComplete }: CheckoutPageProps) {
       return
     }
 
+    orderSubmitLockRef.current = true
     setSubmitting(true)
     setError(null)
 
     try {
       const order = await createOrder({
-        customer,
-        deliveryCarrier,
+        customer: toCheckoutApiCustomer(customer),
         paymentMethod,
-        giftAddon,
+        checkoutAddons,
+        checkoutAddonIds: selectedCheckoutAddonIds(checkoutAddons),
+        giftAddon: checkoutAddons.gift === true,
+        acceptedTerms: true,
         items: lines.map((line) => ({
           productId: line.product.id,
           quantity: line.quantity,
@@ -133,15 +277,26 @@ export function CheckoutPage({ onOrderComplete }: CheckoutPageProps) {
       }
 
       if (paymentMethod === 'card') {
-        // Inainte de redirect catre Netopia: golim cosul si obtinem linkul de plata.
-        const paymentUrl = await startCardPayment(order.id, order.accessToken)
-        clearCart()
-        onOrderComplete?.()
-        window.location.href = paymentUrl
-        return
+        try {
+          const payment = await startCardPayment(order.id, order.accessToken)
+          clearCart()
+          onOrderComplete?.()
+          redirectToCardPayment(payment)
+          return
+        } catch (paymentErr: unknown) {
+          await abandonUnpaidCardOrder(order.id, order.accessToken)
+          throw paymentErr
+        }
       }
 
-      trackPurchase(order.id, order.totalAmount)
+      trackPurchase(
+        order.id,
+        order.totalAmount,
+        metaContentsFromOrderItems(
+          order.items,
+          lines.map((line) => line.product),
+        ),
+      )
       clearCart()
       onOrderComplete?.()
       navigate(`/comanda/${order.id}`, { state: { order } })
@@ -152,13 +307,14 @@ export function CheckoutPage({ onOrderComplete }: CheckoutPageProps) {
           : 'Nu am putut trimite comanda. Încearcă din nou.'
       setError(message)
     } finally {
+      orderSubmitLockRef.current = false
       setSubmitting(false)
     }
   }
 
   return (
     <ShopLayout>
-      <section className="shop-page">
+      <section className="shop-page shop-page--checkout">
         <div className="shop-page__head">
           <h1 className="shop-page__title">Checkout</h1>
           <p className="shop-page__lead muted">
@@ -167,100 +323,334 @@ export function CheckoutPage({ onOrderComplete }: CheckoutPageProps) {
         </div>
 
         <div className="shop-checkout">
-          <form className="shop-form" noValidate onSubmit={handleSubmit}>
-            <div className="shop-form__grid">
-              <label className="shop-field">
-                <span>Nume complet</span>
+          <form className="shop-form" onSubmit={handleSubmit}>
+            <fieldset className="shop-payment shop-checkout__billing-type">
+              <legend>Facturare</legend>
+              <label className="shop-payment__option">
                 <input
-                  value={customer.name}
-                  onChange={(event) =>
-                    setCustomer((current) => ({
-                      ...current,
-                      name: event.target.value,
-                    }))
-                  }
+                  type="radio"
+                  name="billingType"
+                  checked={customer.billingType === 'person'}
+                  onChange={() => updateCustomer('billingType', 'person')}
+                />
+                <span>
+                  <strong>Persoană fizică</strong>
+                </span>
+              </label>
+              <label className="shop-payment__option">
+                <input
+                  type="radio"
+                  name="billingType"
+                  checked={customer.billingType === 'company'}
+                  onChange={() => updateCustomer('billingType', 'company')}
+                />
+                <span>
+                  <strong>Firmă</strong>
+                </span>
+              </label>
+            </fieldset>
+
+            <div className="shop-form__grid">
+              {nomenError ? (
+                <div className="shop-field shop-field--wide" role="alert">
+                  <p className="shop-form__error">
+                    Nu pot încărca localitățile DPD: {nomenError}
+                  </p>
+                  <button
+                    type="button"
+                    className="shop-btn shop-btn--ghost"
+                    onClick={reloadNomenclature}
+                  >
+                    Reîncearcă încărcarea
+                  </button>
+                </div>
+              ) : null}
+              {!nomenReady && !nomenError ? (
+                <p className="shop-field shop-field--wide muted">
+                  Se încarcă județele și localitățile din nomenclatorul DPD…
+                </p>
+              ) : null}
+              <label className="shop-field">
+                <span>Nume</span>
+                <input
+                  value={customer.lastName}
+                  onChange={(event) => updateCustomer('lastName', event.target.value)}
                   required
-                  autoComplete="name"
+                  autoComplete="family-name"
                 />
               </label>
               <label className="shop-field">
-                <span>Telefon</span>
+                <span>Prenume</span>
+                <input
+                  value={customer.firstName}
+                  onChange={(event) => updateCustomer('firstName', event.target.value)}
+                  required
+                  autoComplete="given-name"
+                />
+              </label>
+              {customer.billingType === 'company' ? (
+                <>
+                  <label className="shop-field shop-field--wide">
+                    <span>Denumire firmă</span>
+                    <input
+                      value={customer.companyName}
+                      onChange={(event) =>
+                        updateCustomer('companyName', event.target.value)
+                      }
+                      required
+                      autoComplete="organization"
+                    />
+                  </label>
+                  <label className="shop-field">
+                    <span>CUI</span>
+                    <input
+                      value={customer.companyCui}
+                      onChange={(event) =>
+                        updateCustomer('companyCui', event.target.value)
+                      }
+                      required
+                      placeholder="ex. 54732560"
+                      autoComplete="off"
+                    />
+                  </label>
+                  <label className="shop-field">
+                    <span>Reg. Com. (opțional)</span>
+                    <input
+                      value={customer.companyRegCom}
+                      onChange={(event) =>
+                        updateCustomer('companyRegCom', event.target.value)
+                      }
+                      autoComplete="off"
+                    />
+                  </label>
+                </>
+              ) : null}
+              <label className="shop-field">
+                <span>Telefon *</span>
                 <input
                   value={customer.phone}
                   onChange={(event) =>
-                    setCustomer((current) => ({
-                      ...current,
-                      phone: event.target.value,
-                    }))
+                    updateCustomer('phone', sanitizeRoPhoneInput(event.target.value))
                   }
                   required
+                  type="tel"
+                  inputMode="numeric"
                   autoComplete="tel"
+                  maxLength={10}
+                  minLength={10}
+                  pattern="0[0-9]{9}"
+                  title="Exact 10 cifre, începe cu 0"
+                  placeholder="07xxxxxxxx"
                 />
+                <span className="shop-field__hint muted">
+                  Primești confirmarea comenzii pe SMS.
+                </span>
               </label>
-              <label className="shop-field shop-field--wide">
-                <span>Email (opțional)</span>
+              <label className="shop-field">
+                <span>
+                  Email{paymentMethod === 'card' ? '' : ' (opțional, în plus față de SMS)'}
+                  {paymentMethod === 'card' ? ' *' : ''}
+                </span>
                 <input
                   type="email"
                   value={customer.email}
-                  onChange={(event) =>
+                  onChange={(event) => updateCustomer('email', event.target.value)}
+                  autoComplete="email"
+                  required={paymentMethod === 'card'}
+                />
+              </label>
+              <label className="shop-field">
+                <span>Județ</span>
+                <select
+                  value={customer.county}
+                  onChange={(event) => {
+                    const county = event.target.value
                     setCustomer((current) => ({
                       ...current,
-                      email: event.target.value,
+                      county,
+                      city: '',
+                      dpdSiteId: undefined,
                     }))
+                  }}
+                  required
+                  disabled={!nomenReady}
+                  autoComplete="address-level1"
+                >
+                  <option value="">
+                    {nomenReady ? 'Selectează județul' : 'Se încarcă…'}
+                  </option>
+                  {counties.map((county) => (
+                    <option key={county.code} value={county.code}>
+                      {county.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="shop-field">
+                <span>Localitate</span>
+                <select
+                  value={customer.city}
+                  onChange={(event) => {
+                    const loc = resolveLocality(localities, event.target.value)
+                    const county = customer.county
+                    const cityName = loc?.name ?? event.target.value
+                    // Din cache DPD: siteId real — nu mai e nevoie de resolve.
+                    if (loc && loc.id > 0) {
+                      setCustomer((current) => ({
+                        ...current,
+                        dpdSiteId: loc.id,
+                        city: loc.name,
+                        postalCode:
+                          loc.postCode?.trim() || current.postalCode,
+                      }))
+                      return
+                    }
+                    setCustomer((current) => ({
+                      ...current,
+                      dpdSiteId: undefined,
+                      city: cityName,
+                      postalCode:
+                        loc?.postCode && loc.postCode.trim()
+                          ? loc.postCode.trim()
+                          : current.postalCode,
+                    }))
+                    if (!cityName || !county) return
+                    void resolveDpdSite(county, cityName)
+                      .then((resolved) => {
+                        setCustomer((current) => {
+                          if (current.city !== cityName) return current
+                          return {
+                            ...current,
+                            dpdSiteId: resolved.id > 0 ? resolved.id : undefined,
+                            city: resolved.name,
+                            postalCode:
+                              resolved.postCode?.trim() || current.postalCode,
+                          }
+                        })
+                      })
+                      .catch((err: unknown) => {
+                        setError(
+                          err instanceof Error
+                            ? err.message
+                            : 'Nu am putut valida localitatea în DPD.',
+                        )
+                      })
+                  }}
+                  required
+                  disabled={!nomenReady || !customer.county || localitiesLoading}
+                  autoComplete="address-level2"
+                >
+                  <option value="">
+                    {!nomenReady
+                      ? 'Se încarcă…'
+                      : localitiesLoading
+                        ? 'Se încarcă localitățile…'
+                        : customer.county
+                          ? 'Selectează localitatea'
+                          : 'Alege mai întâi județul'}
+                  </option>
+                  {localities.map((city) => (
+                    <option key={localitySelectKey(city)} value={city.name}>
+                      {city.name}
+                      {city.postCode ? ` (${city.postCode})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="shop-field shop-field--street">
+                <span>Stradă</span>
+                <input
+                  value={customer.street}
+                  onChange={(event) => updateCustomer('street', event.target.value)}
+                  required
+                  autoComplete="address-line1"
+                />
+              </label>
+              <label className="shop-field shop-field--number">
+                <span>Nr.</span>
+                <input
+                  value={customer.streetNumber}
+                  onChange={(event) =>
+                    updateCustomer('streetNumber', event.target.value)
                   }
-                  autoComplete="email"
+                  required
+                  autoComplete="address-line2"
                 />
               </label>
               <label className="shop-field shop-field--wide">
-                <span>Adresă livrare</span>
-                <textarea
-                  value={customer.address}
+                <span>Bloc / scară / apt. (opțional)</span>
+                <input
+                  value={customer.addressExtra}
                   onChange={(event) =>
-                    setCustomer((current) => ({
-                      ...current,
-                      address: event.target.value,
-                    }))
+                    updateCustomer('addressExtra', event.target.value)
                   }
-                  rows={3}
-                  required
-                  autoComplete="street-address"
+                  placeholder="ex: Bl. A, Sc. 2, Et. 3, Ap. 12"
+                  autoComplete="address-line3"
+                />
+              </label>
+              <label className="shop-field">
+                <span>Cod poștal (opțional)</span>
+                <input
+                  value={customer.postalCode}
+                  onChange={(event) =>
+                    updateCustomer('postalCode', event.target.value)
+                  }
+                  inputMode="numeric"
+                  autoComplete="postal-code"
                 />
               </label>
               <label className="shop-field shop-field--wide">
                 <span>Observații (opțional)</span>
                 <textarea
                   value={customer.notes}
-                  onChange={(event) =>
-                    setCustomer((current) => ({
-                      ...current,
-                      notes: event.target.value,
-                    }))
-                  }
+                  onChange={(event) => updateCustomer('notes', event.target.value)}
                   rows={3}
                 />
               </label>
             </div>
 
-            <ShippingCarrierPicker
-              value={deliveryCarrier}
-              onChange={setDeliveryCarrier}
-            />
-
-            <label className="shop-field shop-field--wide shop-field--checkbox shop-checkout__gift">
-              <input
-                type="checkbox"
-                checked={giftAddon}
-                onChange={(event) => setGiftAddon(event.target.checked)}
-              />
-              <span>
-                <strong>Adaugă produs surpriză</strong>
+            <div className="shop-checkout__delivery-note">
+              <p>
+                <strong>Livrare prin curier</strong>
                 <span className="muted">
                   {' '}
-                  — {GIFT_ADDON_PRICE_RON} RON (se adaugă la total și apare pe
-                  factura comenzii ca linie separată).
+                  — transport {shipping <= 0 ? 'gratuit' : formatRon(shipping)} · plată
+                  ramburs sau cu cardul.
                 </span>
-              </span>
-            </label>
+              </p>
+            </div>
+
+            <div className="shop-checkout__bumps" aria-label="Opțiuni suplimentare">
+              <p className="shop-checkout__bumps-title">Completează comanda</p>
+              {addonCatalog.map((addon) => {
+                const active = checkoutAddons[addon.id] === true
+                return (
+                  <label
+                    key={addon.id}
+                    className={`shop-checkout__bump${
+                      active ? ' shop-checkout__bump--active' : ''
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={active}
+                      onChange={() => toggleCheckoutAddon(addon.id)}
+                    />
+                    <span className="shop-checkout__bump-body">
+                      <span className="shop-checkout__bump-head">
+                        <strong>{addon.title}</strong>
+                        <span className="shop-checkout__bump-price">
+                          +{formatRon(addon.priceRon)}
+                        </span>
+                      </span>
+                      <span className="shop-checkout__bump-hint muted">
+                        {addon.hint}
+                      </span>
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
 
             <fieldset className="shop-payment">
               <legend className="shop-payment__legend">Metodă de plată</legend>
@@ -295,6 +685,20 @@ export function CheckoutPage({ onOrderComplete }: CheckoutPageProps) {
                 />
                 <span>
                   <strong>Card online (Netopia)</strong>
+                  <img
+                    className="shop-netopia-badge shop-netopia-badge--light"
+                    src="/badges/netopia.svg"
+                    alt="Netopia Payments - plăți online securizate"
+                    width="122"
+                    height="22"
+                  />
+                  <img
+                    className="shop-netopia-badge shop-netopia-badge--dark"
+                    src="/badges/netopia-white.svg"
+                    alt="Netopia Payments - plăți online securizate"
+                    width="122"
+                    height="22"
+                  />
                   <span className="muted">
                     {' '}
                     — ești redirecționat securizat pentru plata cu cardul.
@@ -306,6 +710,8 @@ export function CheckoutPage({ onOrderComplete }: CheckoutPageProps) {
             <label className="shop-field shop-field--wide shop-field--checkbox">
               <input
                 type="checkbox"
+                name="acceptedTerms"
+                required
                 checked={acceptedTerms}
                 onChange={(event) => setAcceptedTerms(event.target.checked)}
               />
@@ -341,6 +747,7 @@ export function CheckoutPage({ onOrderComplete }: CheckoutPageProps) {
 
           <aside className="shop-summary">
             <h2 className="shop-summary__title">Comanda ta</h2>
+            <FreeShippingHint subtotal={subtotal} />
             <ul className="shop-summary__items">
               {lines.map((line) => (
                 <li key={line.product.id} className="shop-summary__item">
@@ -348,7 +755,7 @@ export function CheckoutPage({ onOrderComplete }: CheckoutPageProps) {
                     {line.product.name} × {line.quantity}
                   </span>
                   <strong>
-                    {formatRon(line.product.salePrice * line.quantity)}
+                      {formatRon(cartLineTotal(line.product, line.quantity))}
                   </strong>
                 </li>
               ))}
@@ -361,23 +768,20 @@ export function CheckoutPage({ onOrderComplete }: CheckoutPageProps) {
               <span>Transport</span>
               <strong>{shipping <= 0 ? 'Gratuit' : formatRon(shipping)}</strong>
             </div>
-            {giftAddon ? (
-              <div className="shop-summary__row">
-                <span>Produs surpriză</span>
-                <strong>{formatRon(giftLine)}</strong>
+            {selectedAddons.map((addon) => (
+              <div key={addon.id} className="shop-summary__row">
+                <span>{addon.title}</span>
+                <strong>{formatRon(addon.priceRon)}</strong>
               </div>
-            ) : null}
+            ))}
             <div className="shop-summary__row shop-summary__row--total">
               <span>Total</span>
               <strong>{formatRon(total)}</strong>
             </div>
             <p className="shop-summary__note muted">
-              {deliveryCarrier
-                ? `Livrare prin ${getDeliveryCarrierLabel(deliveryCarrier)}: ${formatRon(shipping)}.`
-                : `${shippingSummaryLabel(subtotal)}.`}
-              {customer.email.trim()
-                ? ' Vei primi confirmarea pe email și pe această pagină.'
-                : ' Vei primi confirmarea comenzii pe această pagină după trimitere.'}
+              {shippingSummaryLabel(subtotal)}. Confirmarea pleacă pe SMS la
+              numărul completat
+              {customer.email.trim() ? ' și pe email.' : '.'}
             </p>
             <div className="shop-summary__actions">
               <Link className="shop-btn shop-btn--ghost shop-btn--block" to="/cos">

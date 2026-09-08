@@ -4,10 +4,20 @@ import {
   useMemo,
   type ReactNode,
 } from 'react'
-import { ShopToast, useShopToast } from './ShopToast'
+import {
+  ShopToast,
+  useShopToast,
+  type ShopToastAction,
+} from './ShopToast'
+
+export type ShopNoticeAction = ShopToastAction
 
 type ShopNoticeContextValue = {
-  notify: (message: string, title?: string) => void
+  notify: (
+    message: string,
+    title?: string,
+    action?: ShopNoticeAction | null,
+  ) => void
 }
 
 const ShopNoticeContext = createContext<ShopNoticeContextValue | null>(null)
@@ -17,7 +27,7 @@ type ShopNoticeProviderProps = {
 }
 
 export function ShopNoticeProvider({ children }: ShopNoticeProviderProps) {
-  const { message, title, showToast, dismissToast } = useShopToast()
+  const { message, title, action, showToast, dismissToast } = useShopToast()
 
   const value = useMemo(
     () => ({
@@ -29,7 +39,12 @@ export function ShopNoticeProvider({ children }: ShopNoticeProviderProps) {
   return (
     <ShopNoticeContext.Provider value={value}>
       {children}
-      <ShopToast message={message} title={title} onDismiss={dismissToast} />
+      <ShopToast
+        message={message}
+        title={title}
+        action={action}
+        onDismiss={dismissToast}
+      />
     </ShopNoticeContext.Provider>
   )
 }

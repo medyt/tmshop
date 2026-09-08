@@ -295,6 +295,43 @@ function shoptop_email_layout(string $heading, string $contentHtml): string
 HTML;
 }
 
+/** Link către recenzii pe primul produs real din comandă. */
+function shoptop_order_review_url(array $order): string
+{
+    $config = shoptop_config();
+    $site = rtrim((string) ($config['site_url'] ?? 'https://shop-top.ro'), '/');
+    $items = is_array($order['items'] ?? null) ? $order['items'] : [];
+    foreach ($items as $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+        $productId = trim((string) ($item['productId'] ?? $item['product_id'] ?? ''));
+        if ($productId === '') {
+            continue;
+        }
+        if (function_exists('shoptop_is_virtual_product_id') && shoptop_is_virtual_product_id($productId)) {
+            continue;
+        }
+        $slug = $productId;
+        try {
+            $pdo = shoptop_pdo();
+            $stmt = $pdo->prepare('SELECT slug FROM products WHERE id = :id LIMIT 1');
+            $stmt->execute(['id' => $productId]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            $fromDb = trim((string) ($row['slug'] ?? ''));
+            if ($fromDb !== '') {
+                $slug = $fromDb;
+            }
+        } catch (Throwable $e) {
+            /* fallback id */
+        }
+
+        return $site . '/produs/' . rawurlencode($slug) . '#product-reviews';
+    }
+
+    return '';
+}
+
 function shoptop_email_items_table(array $order): string
 {
     $rows = '';
@@ -330,12 +367,17 @@ function shoptop_render_order_confirmation_email(array $order): array
         $carrier = '<p style="margin:0 0 6px;color:#4b5563;">Curier: <strong>' . $carrierLabel . '</strong></p>';
     }
 
+    $paymentMethod = (string) ($order['paymentMethod'] ?? 'cod');
+    $paymentLine = $paymentMethod === 'card'
+        ? '<p style="margin:16px 0 0;">Plata cu cardul a fost înregistrată.</p>'
+        : '<p style="margin:16px 0 0;">Plata se face ramburs, la livrare.</p>';
+
     $content = '<p style="margin:0 0 12px;">Bună' . ($name !== '' ? ', ' . $name : '') . '!</p>'
-        . '<p style="margin:0 0 12px;">Am primit comanda ta <strong>' . $orderId . '</strong>. O pregătim pentru livrare și revenim cu detalii.</p>'
+        . '<p style="margin:0 0 12px;">Am primit comanda ta <strong>' . $orderId . '</strong>. O pregătim pentru livrare și revenim cu detalii. Ai primit și un SMS de confirmare pe numărul din comandă.</p>'
         . shoptop_email_items_table($order)
         . $carrier
         . '<p style="margin:0 0 6px;color:#4b5563;">Adresă livrare: ' . $address . '</p>'
-        . '<p style="margin:16px 0 0;">Plata se face la livrare, dacă nu ai ales plata online.</p>';
+        . $paymentLine;
 
     return [
         'subject' => 'Confirmare comandă ' . (string) $order['id'],
@@ -380,13 +422,21 @@ function shoptop_render_order_status_email(array $order, string $status): ?array
                 ),
             ];
         case 'delivered':
+            $reviewUrl = shoptop_order_review_url($order);
+            $reviewCta = $reviewUrl !== ''
+                ? '<p style="margin:16px 0 0;"><a href="'
+                    . htmlspecialchars($reviewUrl, ENT_QUOTES, 'UTF-8')
+                    . '" style="display:inline-block;background:#166534;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600;">Lasă o recenzie</a></p>'
+                    . '<p style="margin:10px 0 0;color:#4b5563;">Ne ajută pe noi și pe alți clienți dacă spui cum ți s-a părut produsul.</p>'
+                : '';
             return [
                 'subject' => 'Comanda ' . $orderId . ' a fost livrată',
                 'html' => shoptop_email_layout(
                     'Comanda ta a fost livrată',
                     $greeting
                         . '<p style="margin:0 0 12px;">Comanda <strong>' . $orderIdHtml . '</strong> a fost livrată. Îți mulțumim!</p>'
-                        . '<p style="margin:0;color:#4b5563;">Dacă ai nevoie de retur, ne poți scrie oricând.</p>'
+                        . $reviewCta
+                        . '<p style="margin:16px 0 0;color:#4b5563;">Dacă ai nevoie de retur, ne poți scrie oricând.</p>'
                 ),
             ];
         case 'cancelled':
@@ -402,3 +452,297 @@ function shoptop_render_order_status_email(array $order, string $status): ?array
             return null;
     }
 }
+
+/**
+ * Adresa de retur din config (aceeași ca expeditorul de pe AWB).
+ */
+function shoptop_return_address(): string
+{
+    $config = shoptop_config();
+    $address = trim((string) ($config['return_address'] ?? ''));
+    if ($address !== '') {
+        return $address;
+    }
+
+    return 'Sat Alexandru cel Bun, str. Iaz nr. 1, județul Iași, cod poștal 707591, România';
+}
+
+function shoptop_operator_name(): string
+{
+    $config = shoptop_config();
+    $name = trim((string) ($config['operator_name'] ?? ''));
+
+    return $name !== '' ? $name : 'TM SHOP SRL';
+}
+
+function shoptop_return_phone(): string
+{
+    $config = shoptop_config();
+    $phone = trim((string) ($config['return_phone'] ?? ''));
+    if ($phone !== '') {
+        return $phone;
+    }
+
+    // Fallback pentru emailul de retur (nu e afișat public pe site).
+    return '0757 192 613';
+}
+
+/**
+ * Email după validarea cererii de retur: adresa de expediere + condiții.
+ *
+ * @param array{
+ *   orderId:string,
+ *   customerName?:string,
+ *   orderTotal?:float|null,
+ *   iban?:string
+ * } $returnRequest
+ * @return array{subject:string, html:string}
+ */
+function shoptop_render_return_approved_email(array $returnRequest): array
+{
+    $orderId = trim((string) ($returnRequest['orderId'] ?? ''));
+    $orderIdHtml = htmlspecialchars($orderId, ENT_QUOTES, 'UTF-8');
+    $name = htmlspecialchars(trim((string) ($returnRequest['customerName'] ?? '')), ENT_QUOTES, 'UTF-8');
+    $greeting = '<p style="margin:0 0 12px;">Bună' . ($name !== '' ? ', ' . $name : '') . '!</p>';
+    $addressHtml = htmlspecialchars(shoptop_return_address(), ENT_QUOTES, 'UTF-8');
+    $operatorHtml = htmlspecialchars(shoptop_operator_name(), ENT_QUOTES, 'UTF-8');
+    $phoneHtml = htmlspecialchars(shoptop_return_phone(), ENT_QUOTES, 'UTF-8');
+
+    $totalBlock = '';
+    $orderTotal = $returnRequest['orderTotal'] ?? null;
+    $iban = strtoupper(preg_replace('/\s+/', '', trim((string) ($returnRequest['iban'] ?? ''))) ?? '');
+    $ibanHtml = $iban !== '' ? htmlspecialchars($iban, ENT_QUOTES, 'UTF-8') : '';
+
+    if (is_numeric($orderTotal) && (float) $orderTotal > 0) {
+        $amountHtml = shoptop_email_money((float) $orderTotal);
+        $totalBlock = $ibanHtml !== ''
+            ? '<p style="margin:0 0 12px;">După ce primim coletul, îți rambursăm <strong>'
+                . $amountHtml . '</strong> (suma totală a comenzii) în contul IBAN: <strong>'
+                . $ibanHtml . '</strong>.</p>'
+            : '<p style="margin:0 0 12px;">După ce primim coletul, îți rambursăm <strong>'
+                . $amountHtml . '</strong> (suma totală a comenzii) în contul IBAN din cerere.</p>';
+    } else {
+        $totalBlock = $ibanHtml !== ''
+            ? '<p style="margin:0 0 12px;">După ce primim coletul, îți rambursăm <strong>suma totală a comenzii</strong> în contul IBAN: <strong>'
+                . $ibanHtml . '</strong>.</p>'
+            : '<p style="margin:0 0 12px;">După ce primim coletul, îți rambursăm <strong>suma totală a comenzii</strong> în contul IBAN din cerere.</p>';
+    }
+
+    $content = $greeting
+        . '<p style="margin:0 0 12px;">Cererea ta de retur pentru comanda <strong>' . $orderIdHtml
+        . '</strong> a fost <strong>validată</strong>.</p>'
+        . '<p style="margin:0 0 12px;">Poți trimite coletul cu <strong>orice curier</strong> (recomandăm DPD). Costul transportului este suportat de tine. Pe AWB completează:</p>'
+        . '<p style="margin:0 0 16px;padding:12px 14px;background:#f3f4f6;border-radius:8px;line-height:1.5;">'
+        . '<strong>Destinatar: ' . $operatorHtml . ' - retur comanda ' . $orderIdHtml . '</strong><br>'
+        . 'Telefon destinatar: <strong>' . $phoneHtml . '</strong><br>'
+        . $addressHtml . '</p>'
+        . $totalBlock
+        . '<p style="margin:0 0 12px;padding:12px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;line-height:1.5;color:#7f1d1d;">'
+        . '<strong>Atenție:</strong> nu trimite coletul cu plata ramburs sau cu taxele de transport neachitate. '
+        . 'Nerespectarea acestei condiții va duce la refuzul returului.'
+        . '</p>'
+        . '<p style="margin:0;color:#4b5563;">Ambalează produsul în siguranță, împreună cu accesoriile. Menționează numărul comenzii pe colet sau în documentele de expediere.</p>';
+
+    return [
+        'subject' => 'Retur validat — comanda ' . $orderId . ' (adresa de expediere)',
+        'html' => shoptop_email_layout('Cererea de retur a fost validată', $content),
+    ];
+}
+
+/**
+ * Email după respingerea cererii de retur.
+ *
+ * @param array{orderId:string, customerName?:string, adminNotes?:string} $returnRequest
+ * @return array{subject:string, html:string}
+ */
+function shoptop_render_return_rejected_email(array $returnRequest): array
+{
+    $orderId = trim((string) ($returnRequest['orderId'] ?? ''));
+    $orderIdHtml = htmlspecialchars($orderId, ENT_QUOTES, 'UTF-8');
+    $name = htmlspecialchars(trim((string) ($returnRequest['customerName'] ?? '')), ENT_QUOTES, 'UTF-8');
+    $greeting = '<p style="margin:0 0 12px;">Bună' . ($name !== '' ? ', ' . $name : '') . '!</p>';
+    $notes = trim((string) ($returnRequest['adminNotes'] ?? ''));
+    $notesBlock = $notes !== ''
+        ? '<p style="margin:0 0 12px;">Motiv: ' . htmlspecialchars($notes, ENT_QUOTES, 'UTF-8') . '</p>'
+        : '';
+
+    $content = $greeting
+        . '<p style="margin:0 0 12px;">Cererea ta de retur pentru comanda <strong>' . $orderIdHtml
+        . '</strong> nu a putut fi validată.</p>'
+        . $notesBlock
+        . '<p style="margin:0;color:#4b5563;">Dacă ai întrebări sau crezi că este o eroare, răspunde la acest email.</p>';
+
+    return [
+        'subject' => 'Cerere de retur — comanda ' . $orderId,
+        'html' => shoptop_email_layout('Cererea de retur nu a fost validată', $content),
+    ];
+}
+
+/**
+ * Email după finalizare: colet primit, rambursare pe IBAN.
+ *
+ * @param array{
+ *   orderId:string,
+ *   customerName?:string,
+ *   orderTotal?:float|null,
+ *   iban?:string
+ * } $returnRequest
+ * @return array{subject:string, html:string}
+ */
+function shoptop_render_return_finalized_email(array $returnRequest): array
+{
+    $orderId = trim((string) ($returnRequest['orderId'] ?? ''));
+    $orderIdHtml = htmlspecialchars($orderId, ENT_QUOTES, 'UTF-8');
+    $name = htmlspecialchars(trim((string) ($returnRequest['customerName'] ?? '')), ENT_QUOTES, 'UTF-8');
+    $greeting = '<p style="margin:0 0 12px;">Bună' . ($name !== '' ? ', ' . $name : '') . '!</p>';
+
+    $totalBlock = '';
+    $orderTotal = $returnRequest['orderTotal'] ?? null;
+    if (is_numeric($orderTotal) && (float) $orderTotal > 0) {
+        $totalBlock = '<p style="margin:0 0 12px;">Îți rambursăm <strong>'
+            . shoptop_email_money((float) $orderTotal)
+            . '</strong> (suma totală a comenzii).</p>';
+    } else {
+        $totalBlock = '<p style="margin:0 0 12px;">Îți rambursăm <strong>suma totală a comenzii</strong>.</p>';
+    }
+
+    $iban = strtoupper(preg_replace('/\s+/', '', trim((string) ($returnRequest['iban'] ?? ''))) ?? '');
+    $ibanBlock = $iban !== ''
+        ? '<p style="margin:0 0 12px;">Transferul se face către IBAN: <strong>'
+            . htmlspecialchars($iban, ENT_QUOTES, 'UTF-8') . '</strong>.</p>'
+        : '<p style="margin:0 0 12px;">Transferul se face către IBAN-ul din cererea de retur.</p>';
+
+    $content = $greeting
+        . '<p style="margin:0 0 12px;">Am primit coletul de retur pentru comanda <strong>'
+        . $orderIdHtml . '</strong>.</p>'
+        . $totalBlock
+        . $ibanBlock
+        . '<p style="margin:0;color:#4b5563;">Costul transportului de retur rămâne în sarcina ta. Dacă ai nevoie de detalii, răspunde la acest mesaj.</p>';
+
+    return [
+        'subject' => 'Retur finalizat — rambursare comanda ' . $orderId,
+        'html' => shoptop_email_layout('Am primit returul', $content),
+    ];
+}
+
+/**
+ * Email către client după înregistrare (confirmare adresă / bun venit).
+ *
+ * @return array{subject:string, html:string}
+ */
+function shoptop_render_registration_confirmation_email(string $userEmail): array
+{
+    $config = shoptop_config();
+    $siteUrl = rtrim(trim((string) ($config['site_url'] ?? 'https://shop-top.ro')), '/');
+    $siteUrlEsc = htmlspecialchars($siteUrl, ENT_QUOTES, 'UTF-8');
+    $emailEsc = htmlspecialchars($userEmail, ENT_QUOTES, 'UTF-8');
+    $loginPath = htmlspecialchars($siteUrl . '/conectare', ENT_QUOTES, 'UTF-8');
+    $brand = htmlspecialchars(shoptop_email_brand(), ENT_QUOTES, 'UTF-8');
+
+    $content = '<p style="margin:0 0 12px;">Bun venit!</p>'
+        . '<p style="margin:0 0 12px;">Contul tău la <strong>' . $brand . '</strong> a fost creat cu succes, folosind adresa <strong>' . $emailEsc . '</strong>.</p>'
+        . '<p style="margin:0 0 12px;">Te poți conecta oricând:</p>'
+        . '<p style="margin:0 0 16px;"><a href="' . $loginPath . '" style="display:inline-block;padding:12px 20px;background:#059669;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold;">Conectare</a></p>'
+        . '<p style="margin:0;color:#6b7280;font-size:14px;">Dacă nu tu ai creat acest cont, ignoră acest mesaj și scrie-ne la adresa din subsol.</p>'
+        . '<p style="margin:12px 0 0;color:#6b7280;font-size:13px;">Link direct: <a href="' . $loginPath . '" style="color:#2563eb;">' . $siteUrlEsc . '/conectare</a></p>';
+
+    return [
+        'subject' => 'Confirmare înregistrare — ' . shoptop_email_brand(),
+        'html' => shoptop_email_layout('Cont creat', $content),
+    ];
+}
+
+/**
+ * Notificare pentru magazin: client nou înregistrat.
+ *
+ * @return array{subject:string, html:string}
+ */
+function shoptop_render_registration_admin_email(string $userEmail): array
+{
+    $emailEsc = htmlspecialchars($userEmail, ENT_QUOTES, 'UTF-8');
+    $content = '<p style="margin:0 0 12px;">Un client nou s-a înregistrat pe site.</p>'
+        . '<p style="margin:0;"><strong>Email cont:</strong> ' . $emailEsc . '</p>'
+        . '<p style="margin:16px 0 0;color:#6b7280;font-size:14px;">Utilizatorii sunt în tabela <code>users</code> (rol <code>customer</code>).</p>';
+
+    return [
+        'subject' => '[' . shoptop_email_brand() . '] Înregistrare nouă: ' . $userEmail,
+        'html' => shoptop_email_layout('Client nou înregistrat', $content),
+    ];
+}
+
+/**
+ * Email către client cu factura emisă (PDF atașat separat).
+ *
+ * @return array{subject:string, html:string}
+ */
+function shoptop_render_invoice_email(
+    string $orderId,
+    string $customerName,
+    string $series,
+    string $number
+): array {
+    $orderIdHtml = htmlspecialchars($orderId, ENT_QUOTES, 'UTF-8');
+    $name = htmlspecialchars(trim($customerName), ENT_QUOTES, 'UTF-8');
+    $invoiceRef = htmlspecialchars(trim($series) . '/' . trim($number), ENT_QUOTES, 'UTF-8');
+    $greeting = '<p style="margin:0 0 12px;">Bună' . ($name !== '' ? ', ' . $name : '') . '!</p>';
+
+    $content = $greeting
+        . '<p style="margin:0 0 12px;">Pentru comanda <strong>' . $orderIdHtml . '</strong> am emis factura <strong>'
+        . $invoiceRef . '</strong>.</p>'
+        . '<p style="margin:0 0 12px;">Găsești PDF-ul facturii atașat acestui email.</p>'
+        . '<p style="margin:0;color:#4b5563;">Dacă ai întrebări, răspunde la acest mesaj.</p>';
+
+    return [
+        'subject' => 'Factură ' . trim($series) . '/' . trim($number) . ' — comanda ' . $orderId,
+        'html' => shoptop_email_layout('Factura ta a fost emisă', $content),
+    ];
+}
+
+/**
+ * @param array{email:string, items: list<array{name:string, url?:string}>} $draft
+ * @return array{subject:string, html:string}
+ */
+function shoptop_render_cart_reminder_email(array $draft): array
+{
+    $config = shoptop_config();
+    $site = rtrim((string) ($config['site_url'] ?? 'https://shop-top.ro'), '/');
+    $items = is_array($draft['items'] ?? null) ? $draft['items'] : [];
+    $list = '';
+    $firstUrl = $site . '/checkout';
+    foreach ($items as $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+        $name = htmlspecialchars(trim((string) ($item['name'] ?? 'Produs')), ENT_QUOTES, 'UTF-8');
+        $url = trim((string) ($item['url'] ?? ''));
+        if ($url !== '' && !preg_match('#^https://#i', $url)) {
+            $url = $site . (str_starts_with($url, '/') ? $url : '/' . $url);
+        }
+        if ($url !== '' && $firstUrl === $site . '/checkout') {
+            $firstUrl = $url;
+        }
+        $list .= '<li style="margin:0 0 6px;">' . $name . '</li>';
+    }
+    if ($list === '') {
+        $list = '<li style="margin:0 0 6px;">Produsele din coșul tău</li>';
+    }
+    $cta = htmlspecialchars($firstUrl, ENT_QUOTES, 'UTF-8');
+    $threshold = function_exists('shoptop_shipping_free_over')
+        ? shoptop_shipping_free_over()
+        : 0.0;
+    $freeLine = $threshold > 0
+        ? '<p style="margin:0 0 16px;">Livrarea e gratuită de la '
+            . htmlspecialchars(number_format($threshold, 0, ',', '.'), ENT_QUOTES, 'UTF-8')
+            . ' RON — poți reveni și închide comanda în câteva minute.</p>'
+        : '<p style="margin:0 0 16px;">Poți reveni și închide comanda în câteva minute.</p>';
+    $content = '<p style="margin:0 0 12px;">Ai lăsat produse în coș și nu ai finalizat comanda.</p>'
+        . '<ul style="margin:0 0 16px;padding-left:18px;">' . $list . '</ul>'
+        . $freeLine
+        . '<p style="margin:0;"><a href="' . $cta . '" style="display:inline-block;background:#166534;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600;">Continuă comanda</a></p>';
+
+    return [
+        'subject' => 'Ți-ai lăsat coșul pe ' . shoptop_email_brand(),
+        'html' => shoptop_email_layout('Coșul tău te așteaptă', $content),
+    ];
+}
+

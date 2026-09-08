@@ -8,7 +8,7 @@ export type ReturnRequestInput = {
   customerEmail: string
   customerPhone?: string
   reason: string
-  iban?: string
+  iban: string
   items?: string
 }
 
@@ -24,6 +24,31 @@ export type ReturnRequest = {
   status: ReturnStatus
   adminNotes: string
   createdAt: string
+  orderExists?: boolean
+  orderTotalAmount?: number | null
+  orderStatus?: string | null
+}
+
+export type ReturnUpdateInput = {
+  id: number
+  status: ReturnStatus
+  orderId?: string
+  customerName?: string
+  customerEmail?: string
+  customerPhone?: string
+  reason?: string
+  iban?: string
+  items?: string
+  adminNotes?: string
+  /** Forțează emailul clientului (ex. re-trimitere la validare). */
+  notifyCustomer?: boolean
+}
+
+export type ReturnUpdateResult = {
+  ok: boolean
+  emailSent: boolean
+  emailWarning?: string
+  return: ReturnRequest
 }
 
 export function isReturnsApiEnabled(): boolean {
@@ -58,22 +83,31 @@ export async function fetchAdminReturns(
   return data as ReturnRequest[]
 }
 
-export async function updateReturnStatus(
-  id: number,
-  status: ReturnStatus,
-  adminNotes?: string,
-): Promise<void> {
+export async function updateReturnRequest(
+  input: ReturnUpdateInput,
+): Promise<ReturnUpdateResult> {
   const res = await apiFetch(
     '/returns.php',
     {
       method: 'POST',
-      body: JSON.stringify({ action: 'updateStatus', id, status, adminNotes }),
+      body: JSON.stringify({ action: 'update', ...input }),
     },
     { credentials: 'include' },
   )
   if (!res.ok) {
     throw new Error(await readErrorMessage(res))
   }
+  const data = (await res.json()) as ReturnUpdateResult
+  return data
+}
+
+/** @deprecated Preferă updateReturnRequest pentru editare completă. */
+export async function updateReturnStatus(
+  id: number,
+  status: ReturnStatus,
+  adminNotes?: string,
+): Promise<ReturnUpdateResult> {
+  return updateReturnRequest({ id, status, adminNotes })
 }
 
 export async function deleteReturnRequest(id: number): Promise<void> {

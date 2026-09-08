@@ -10,6 +10,51 @@ require_once __DIR__ . '/lib.php';
  * fluxul magazinului continua, iar eroarea e logata.
  */
 
+/**
+ * Extrage localitate / judet / cod postal din adresa structurata salvata in DB.
+ *
+ * Format asteptat:
+ *   Str. X nr. Y, Bl. A
+ *   Cluj-Napoca, jud. Cluj
+ *   Cod postal: 400000
+ *
+ * @return array{street:string,city:string,state:string,postcode:string}
+ */
+function shoptop_parse_ro_delivery_address(string $address): array
+{
+    $result = [
+        'street' => '',
+        'city' => '',
+        'state' => '',
+        'postcode' => '',
+    ];
+    $lines = preg_split('/\r\n|\r|\n/', trim($address)) ?: [];
+    $lines = array_values(array_filter(array_map('trim', $lines), static function ($line) {
+        return $line !== '';
+    }));
+
+    if ($lines === []) {
+        return $result;
+    }
+
+    foreach ($lines as $line) {
+        if (preg_match('/^Cod\s*po[sș]tal\s*:\s*(.+)$/iu', $line, $m)) {
+            $result['postcode'] = trim($m[1]);
+            continue;
+        }
+        if (preg_match('/^(.*?),\s*jud\.?\s*(.+)$/iu', $line, $m)) {
+            $result['city'] = trim($m[1]);
+            $result['state'] = trim($m[2]);
+            continue;
+        }
+        if ($result['street'] === '') {
+            $result['street'] = $line;
+        }
+    }
+
+    return $result;
+}
+
 function shoptop_baselinker_settings(): array
 {
     $config = shoptop_config();
@@ -202,11 +247,41 @@ function shoptop_baselinker_push_order(array $order): ?string
             'email' => (string) ($order['customerEmail'] ?? ''),
             'phone' => (string) ($order['customerPhone'] ?? ''),
             'delivery_fullname' => (string) ($order['customerName'] ?? ''),
-            'delivery_address' => (string) ($order['customerAddress'] ?? ''),
+            'delivery_address' => (string) ($order['deliveryStreet'] ?? $order['customerAddress'] ?? ''),
+            'delivery_city' => (string) ($order['deliveryCity'] ?? ''),
+            'delivery_state' => (string) ($order['deliveryState'] ?? ''),
+            'delivery_postcode' => (string) ($order['deliveryPostcode'] ?? ''),
             'delivery_country_code' => 'RO',
             'products' => $products,
             'custom_extra_fields' => [],
         ];
+
+        // Dacă lipseau câmpurile structurate, le extragem din adresa salvată.
+        if ($params['delivery_city'] === '' || $params['delivery_state'] === '') {
+            $parsed = shoptop_parse_ro_delivery_address((string) ($order['customerAddress'] ?? ''));
+            if ($params['delivery_city'] === '') {
+                $params['delivery_city'] = $parsed['city'];
+            }
+            if ($params['delivery_state'] === '') {
+                $params['delivery_state'] = $parsed['state'];
+            }
+            if ($params['delivery_postcode'] === '') {
+                $params['delivery_postcode'] = $parsed['postcode'];
+            }
+            if (
+                $params['delivery_address'] === (string) ($order['customerAddress'] ?? '')
+                && $parsed['street'] !== ''
+            ) {
+                $params['delivery_address'] = $parsed['street'];
+            }
+        }
+
+        // BaseLinker nu acceptă bine câmpuri goale pe unele integrări curier.
+        foreach (['delivery_city', 'delivery_state', 'delivery_postcode'] as $key) {
+            if ($params[$key] === '') {
+                unset($params[$key]);
+            }
+        }
         if ($s['order_status_id'] === '') {
             unset($params['order_status_id']);
         }

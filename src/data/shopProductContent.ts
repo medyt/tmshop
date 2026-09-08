@@ -1,4 +1,5 @@
 import type { Product } from '../types/product'
+import { htmlToBlocks } from '../lib/richText'
 
 export type ShopProductPageContent = {
   lead: string
@@ -834,11 +835,9 @@ export const SHOP_PRODUCT_CONTENT: Record<string, ShopProductPageContent> = {
 }
 
 function buildFallbackContent(product: Product): ShopProductPageContent {
-  const description = (product.description ?? product.name).trim()
-  const chunks = description
-    .split(/\n+/)
-    .map((part) => part.trim())
-    .filter(Boolean)
+  const rawDescription = (product.description ?? product.name).trim()
+  const chunks = htmlToBlocks(rawDescription)
+  const description = chunks.join(' ') || product.name
   const lead = chunks[0] ?? product.name
   const body = chunks.length > 1 ? chunks.slice(1) : [description || product.name]
   const specs: { label: string; value: string }[] = [

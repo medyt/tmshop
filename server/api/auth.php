@@ -14,10 +14,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
+    // 200 + null când nu ești logat — evită zgomotul 401 în consolă la fiecare PageView.
+    // shoptop_current_user() eliberează deja lock-ul de sesiune.
     $user = shoptop_current_user();
-    if ($user === null) {
-        shoptop_json_error('Neautentificat.', 401);
-    }
     shoptop_json_response($user);
 }
 
@@ -41,15 +40,10 @@ if ($action === 'logout') {
     shoptop_start_session();
     $_SESSION = [];
     if (ini_get('session.use_cookies')) {
-        $params = session_get_cookie_params();
         setcookie(
             session_name(),
             '',
-            time() - 3600,
-            $params['path'],
-            $params['domain'] ?? '',
-            (bool) $params['secure'],
-            (bool) $params['httponly']
+            shoptop_session_cookie_options(time() - 3600)
         );
     }
     session_destroy();
@@ -96,10 +90,31 @@ if ($action === 'register') {
         shoptop_json_error('Contul nu a putut fi creat.', 500);
     }
 
-    shoptop_start_session();
-    $_SESSION['user_id'] = (string) $row['id'];
-    $_SESSION['user_role'] = (string) $row['role'];
-    shoptop_json_response(shoptop_user_to_response($row), 201);
+    shoptop_establish_user_session((string) $row['id'], (string) $row['role']);
+
+    require_once __DIR__ . '/mailer.php';
+    $customerEmail = (string) $row['email'];
+    $confirmRendered = shoptop_render_registration_confirmation_email($customerEmail);
+    $mailToUser = shoptop_send_mail(
+        $customerEmail,
+        $confirmRendered['subject'],
+        $confirmRendered['html']
+    );
+    if (!$mailToUser) {
+        error_log('shoptop: registration confirmation email failed for ' . $customerEmail);
+    }
+
+    $shopTo = trim((string) (shoptop_config()['shop_email'] ?? ''));
+    if ($shopTo !== '' && strcasecmp($shopTo, $customerEmail) !== 0) {
+        $adminRendered = shoptop_render_registration_admin_email($customerEmail);
+        if (!shoptop_send_mail($shopTo, $adminRendered['subject'], $adminRendered['html'])) {
+            error_log('shoptop: registration admin notify failed for ' . $customerEmail);
+        }
+    }
+
+    $payload = shoptop_user_to_response($row);
+    $payload['confirmationEmailSent'] = $mailToUser;
+    shoptop_json_response($payload, 201);
 }
 
 if ($action === 'login') {
@@ -115,9 +130,7 @@ if ($action === 'login') {
         shoptop_json_error('Email sau parola incorecte.', 401);
     }
 
-    shoptop_start_session();
-    $_SESSION['user_id'] = (string) $row['id'];
-    $_SESSION['user_role'] = (string) $row['role'];
+    shoptop_establish_user_session((string) $row['id'], (string) $row['role']);
     shoptop_json_response(shoptop_user_to_response($row));
 }
 

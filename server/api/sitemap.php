@@ -51,7 +51,7 @@ $pdo = shoptop_pdo();
 $stmt = $pdo->query(
     'SELECT id, slug
      FROM products
-     WHERE stock_qty > 0 AND sale_price > 0
+     WHERE sale_price > 0
      ORDER BY name ASC'
 );
 

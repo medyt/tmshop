@@ -13,6 +13,7 @@ import {
   loginUser,
   logoutUser,
   registerUser,
+  type RegisterResult,
 } from '../lib/authApi'
 import type { User } from '../types/user'
 
@@ -23,7 +24,7 @@ type AuthContextValue = {
   isAdmin: boolean
   isCustomer: boolean
   login: (email: string, password: string) => Promise<User>
-  register: (email: string, password: string) => Promise<User>
+  register: (email: string, password: string) => Promise<RegisterResult>
   logout: () => Promise<void>
   refresh: () => Promise<void>
 }
@@ -76,7 +77,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const register = useCallback(async (email: string, password: string) => {
     const next = await registerUser(email, password)
-    setUser(next)
+    setUser(next.user)
     setError(null)
     return next
   }, [])

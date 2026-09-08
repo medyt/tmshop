@@ -12,7 +12,6 @@ function siteHost(): string {
 function phoneDisplay(): string {
   const p = SITE_LEGAL.contactPhone.trim()
   if (!p) return ''
-  // Afișare prietenoasă: +40 757 192 613 sau cum e în config
   return p.replace(/\s+/g, ' ')
 }
 
@@ -22,18 +21,19 @@ export function ShopAnnouncementBar() {
 
   const segments: Array<{ icon: string; text: string }> = [
     {
-      icon: '📞',
+      icon: phone ? '📞' : '✉️',
       text: phone
         ? `Comenzi telefonice! ${phone}`
-        : `Comenzi telefonice — ${SITE_LEGAL.contactEmail}`,
+        : `Contact: ${SITE_LEGAL.contactEmail}`,
     },
-    { icon: '🎯', text: 'Prinde punctele de fidelitate' },
+    { icon: '🚚', text: SITE_LEGAL.shippingFreeOverRon > 0
+      ? `Livrare gratuită de la ${SITE_LEGAL.shippingFreeOverRon} RON`
+      : `Livrare rapidă în 24–72 h — ${SITE_LEGAL.deliveryCarriersLabel}` },
     { icon: '🔥', text: `Oferte zilnice pe ${host}` },
     {
-      icon: '🚚',
+      icon: '⚡',
       text: `Livrare rapidă în 24–72 h — ${SITE_LEGAL.deliveryCarriersLabel}`,
     },
-    { icon: '🎁', text: 'Cadou la înregistrare' },
   ]
 
   const renderSegment = (ariaHidden: boolean) => (

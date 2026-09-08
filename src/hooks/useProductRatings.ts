@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
+import { fetchProductReviewSummaries } from '../lib/shopGrowth'
 import {
-  fetchProductReviewSummaries,
-  type ProductReviewSummary,
-} from '../lib/shopGrowth'
+  mergeProductReviewStats,
+  type ProductReviewDisplayStats,
+} from '../lib/productReviewStats'
 
 export function useProductRatings(productIds: string[]) {
-  const [ratings, setRatings] = useState<Map<string, ProductReviewSummary>>(
-    () => new Map(),
-  )
+  const [ratings, setRatings] = useState<
+    Map<string, ProductReviewDisplayStats>
+  >(() => new Map())
   const productKey = useMemo(
     () => [...new Set(productIds)].sort().join('|'),
     [productIds],
@@ -19,16 +20,34 @@ export function useProductRatings(productIds: string[]) {
       return
     }
 
-    const allowed = new Set(productKey.split('|'))
+    const allowed = [...productKey.split('|')]
+    setRatings(
+      new Map(
+        allowed.map((productId) => [
+          productId,
+          mergeProductReviewStats(productId, 0, null),
+        ]),
+      ),
+    )
+
     let cancelled = false
 
     void fetchProductReviewSummaries().then((summaries) => {
       if (cancelled) return
-      const next = new Map<string, ProductReviewSummary>()
-      for (const summary of summaries) {
-        if (allowed.has(summary.productId)) {
-          next.set(summary.productId, summary)
-        }
+      const byProduct = new Map(
+        summaries.map((summary) => [summary.productId, summary]),
+      )
+      const next = new Map<string, ProductReviewDisplayStats>()
+      for (const productId of allowed) {
+        const summary = byProduct.get(productId)
+        next.set(
+          productId,
+          mergeProductReviewStats(
+            productId,
+            summary?.reviewCount ?? 0,
+            summary?.averageRating ?? null,
+          ),
+        )
       }
       setRatings(next)
     })

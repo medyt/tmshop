@@ -2,7 +2,6 @@ import { formatRon } from '../../lib/shopCatalog'
 import { AWB_SERVICE_LABEL, AWB_SHIPPER } from '../../lib/awb'
 import {
   customerNotesWithoutCarrier,
-  getDeliveryCarrierLabel,
 } from '../../lib/shippingCarriers'
 import type { Order } from '../../types/order'
 import './AwbPrintSheet.css'
@@ -19,9 +18,7 @@ function formatOrderDate(value: string): string {
 
 export function AwbPrintSheet({ order }: AwbPrintSheetProps) {
   const awbNumber = order.awbNumber ?? order.id
-  const carrierLabel = order.deliveryCarrier
-    ? getDeliveryCarrierLabel(order.deliveryCarrier)
-    : null
+  const carrierLabel = 'Curier'
   const cleanNotes = customerNotesWithoutCarrier(order.customerNotes)
   const isCod = order.paymentMethod !== 'card'
 
@@ -35,9 +32,7 @@ export function AwbPrintSheet({ order }: AwbPrintSheetProps) {
           <p className="awb-print__meta">{formatOrderDate(order.createdAt)}</p>
         </div>
         <div className="awb-print__service">
-          {carrierLabel ? (
-            <p className="awb-print__carrier">{carrierLabel}</p>
-          ) : null}
+          <p className="awb-print__carrier">{carrierLabel}</p>
           <p>{AWB_SERVICE_LABEL}</p>
           <p>
             Ramburs:{' '}
@@ -75,7 +70,13 @@ export function AwbPrintSheet({ order }: AwbPrintSheetProps) {
         <ul className="awb-print__items">
           {order.items.map((item) => (
             <li key={`${order.id}-${item.productId}`}>
-              <span>{item.productName}</span>
+              <span>
+                {item.productSku ? (
+                  <strong className="awb-print__sku">{item.productSku}</strong>
+                ) : null}
+                {item.productSku ? ' · ' : null}
+                {item.productName}
+              </span>
               <span>
                 {item.quantity} × {formatRon(item.unitPrice)}
               </span>

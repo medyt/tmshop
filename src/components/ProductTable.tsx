@@ -1,29 +1,28 @@
 import { useMemo, useState } from 'react'
 import type { Product } from '../types/product'
 import {
-  productCost,
   productMarginPercent,
   productProfit,
 } from '../lib/productMath'
 import { extraImageCount, primaryImageUrl } from '../lib/productImages'
 import { ProductImage } from './ProductImage'
-import { proposedPriceAverage } from '../lib/proposedPrice'
+import { htmlToPlainText } from '../lib/richText'
 
 function briefDescription(text: string | undefined, max = 90): string | null {
   if (!text?.trim()) return null
-  const t = text.trim().replace(/\s+/g, ' ')
+  const t = htmlToPlainText(text).replace(/\s+/g, ' ').trim()
+  if (!t) return null
   if (t.length <= max) return t
   return `${t.slice(0, max).trimEnd()}…`
 }
 
 export type SortKey =
   | 'name'
-  | 'supplierA'
-  | 'supplierB'
+  | 'ean'
+  | 'purchase'
   | 'sale'
   | 'stock'
   | 'profit'
-  | 'proposed'
 
 type Props = {
   products: Product[]
@@ -41,13 +40,18 @@ function sortProducts(list: Product[], key: SortKey, dir: 1 | -1): Product[] {
         va = a.name.toLowerCase()
         vb = b.name.toLowerCase()
         break
-      case 'supplierA':
-        va = a.supplierPriceA
-        vb = b.supplierPriceA
-        break
-      case 'supplierB':
-        va = a.supplierPriceB
-        vb = b.supplierPriceB
+      case 'ean': {
+        const aEan = a.ean?.trim() ?? ''
+        const bEan = b.ean?.trim() ?? ''
+        // Fără EAN rămân la final, indiferent de direcție.
+        if (!aEan && !bEan) return 0
+        if (!aEan) return 1
+        if (!bEan) return -1
+        return aEan.localeCompare(bEan, undefined, { numeric: true }) * mul
+      }
+      case 'purchase':
+        va = a.purchasePrice
+        vb = b.purchasePrice
         break
       case 'sale':
         va = a.salePrice
@@ -60,10 +64,6 @@ function sortProducts(list: Product[], key: SortKey, dir: 1 | -1): Product[] {
       case 'profit':
         va = productProfit(a)
         vb = productProfit(b)
-        break
-      case 'proposed':
-        va = proposedPriceAverage(a) ?? -Infinity
-        vb = proposedPriceAverage(b) ?? -Infinity
         break
       default:
         break
@@ -179,21 +179,20 @@ export function ProductTable({ products, selectedId, onSelect }: Props) {
               </th>
               <th scope="col">
                 <SortButton
-                  label="Elena"
-                  active={sortKey === 'supplierA'}
+                  label="EAN"
+                  active={sortKey === 'ean'}
                   dir={sortDir}
-                  onClick={() => toggleSort('supplierA')}
+                  onClick={() => toggleSort('ean')}
                 />
               </th>
               <th scope="col">
                 <SortButton
-                  label="Basel"
-                  active={sortKey === 'supplierB'}
+                  label="Preț achiziție"
+                  active={sortKey === 'purchase'}
                   dir={sortDir}
-                  onClick={() => toggleSort('supplierB')}
+                  onClick={() => toggleSort('purchase')}
                 />
               </th>
-              <th scope="col">Cost</th>
               <th scope="col">
                 <SortButton
                   label="Stoc"
@@ -219,28 +218,16 @@ export function ProductTable({ products, selectedId, onSelect }: Props) {
                 />
               </th>
               <th scope="col">Marjă</th>
-              <th scope="col">
-                <SortButton
-                  label="Preț propus"
-                  active={sortKey === 'proposed'}
-                  dir={sortDir}
-                  onClick={() => toggleSort('proposed')}
-                />
-              </th>
-              <th scope="col">Surse online</th>
             </tr>
           </thead>
           <tbody>
             {sorted.map((p) => {
               const profit = productProfit(p)
               const margin = productMarginPercent(p)
-              const cost = productCost(p)
               const selected = p.id === selectedId
               const thumb = primaryImageUrl(p)
               const more = extraImageCount(p)
               const descLine = briefDescription(p.description)
-              const propAvg = proposedPriceAverage(p)
-              const obs = p.marketObservations ?? []
               return (
                 <tr
                   key={p.id}
@@ -293,43 +280,21 @@ export function ProductTable({ products, selectedId, onSelect }: Props) {
                       ) : null}
                     </button>
                   </td>
-                  <td>{p.supplierPriceA.toFixed(2)}</td>
-                  <td>{p.supplierPriceB.toFixed(2)}</td>
-                  <td>{cost.toFixed(2)}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="row-hit row-hit--text"
+                      onClick={() => onSelect(p.id)}
+                    >
+                      <span className="cell-sku">{p.ean?.trim() || '—'}</span>
+                    </button>
+                  </td>
+                  <td>{p.purchasePrice.toFixed(2)}</td>
                   <td>{p.stockQty ?? 0}</td>
                   <td>{p.salePrice.toFixed(2)}</td>
                   <td>{profit.toFixed(2)}</td>
                   <td>
                     {margin === null ? '—' : `${margin.toFixed(1)} %`}
-                  </td>
-                  <td>
-                    {propAvg === null ? '—' : propAvg.toFixed(2)}
-                  </td>
-                  <td className="td-links td-obs">
-                    {obs.length === 0 ? (
-                      '—'
-                    ) : (
-                      <span className="obs-links">
-                        <span className="muted small">{obs.length} prețuri · </span>
-                        {obs.slice(0, 5).map((o, i) =>
-                          o.sourceUrl ? (
-                            <a
-                              key={i}
-                              href={o.sourceUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="obs-link"
-                            >
-                              [{i + 1}]
-                            </a>
-                          ) : (
-                            <span key={i} className="muted small">
-                              [{i + 1}]
-                            </span>
-                          ),
-                        )}
-                      </span>
-                    )}
                   </td>
                 </tr>
               )
@@ -342,13 +307,10 @@ export function ProductTable({ products, selectedId, onSelect }: Props) {
         {sorted.map((p) => {
           const profit = productProfit(p)
           const margin = productMarginPercent(p)
-          const cost = productCost(p)
           const selected = p.id === selectedId
           const thumb = primaryImageUrl(p)
           const more = extraImageCount(p)
           const cardDesc = briefDescription(p.description, 120)
-          const propAvg = proposedPriceAverage(p)
-          const obs = p.marketObservations ?? []
           return (
             <li key={p.id}>
               <button
@@ -378,21 +340,16 @@ export function ProductTable({ products, selectedId, onSelect }: Props) {
                 <div className="product-card__body">
                   <strong>{p.name}</strong>
                   {p.sku ? <span className="muted">{p.sku}</span> : null}
+                  {p.ean?.trim() ? (
+                    <span className="muted">EAN {p.ean.trim()}</span>
+                  ) : null}
                   {cardDesc ? (
                     <p className="product-card__desc">{cardDesc}</p>
                   ) : null}
                   <dl className="product-card__stats">
                     <div>
-                      <dt>Elena</dt>
-                      <dd>{p.supplierPriceA.toFixed(2)}</dd>
-                    </div>
-                    <div>
-                      <dt>Basel</dt>
-                      <dd>{p.supplierPriceB.toFixed(2)}</dd>
-                    </div>
-                    <div>
-                      <dt>Cost</dt>
-                      <dd>{cost.toFixed(2)}</dd>
+                      <dt>Preț achiziție</dt>
+                      <dd>{p.purchasePrice.toFixed(2)}</dd>
                     </div>
                     <div>
                       <dt>Stoc</dt>
@@ -413,12 +370,6 @@ export function ProductTable({ products, selectedId, onSelect }: Props) {
                       </dd>
                     </div>
                   </dl>
-                  {propAvg !== null ? (
-                    <p className="small muted">
-                      Preț propus (medie): {propAvg.toFixed(2)}
-                      {obs.length ? ` · ${obs.length} observații` : ''}
-                    </p>
-                  ) : null}
                 </div>
               </button>
             </li>

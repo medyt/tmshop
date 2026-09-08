@@ -1,0 +1,13 @@
+USE shoptop;
+
+CREATE TABLE IF NOT EXISTS monthly_expense_lines (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  month_key CHAR(7) NOT NULL COMMENT 'YYYY-MM',
+  category VARCHAR(64) NOT NULL,
+  label VARCHAR(255) NOT NULL DEFAULT '',
+  amount DECIMAL(12, 2) NOT NULL DEFAULT 0 COMMENT 'Fără TVA',
+  sort_order INT NOT NULL DEFAULT 0,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_monthly_expense_lines_month (month_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

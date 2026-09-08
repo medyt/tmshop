@@ -60,7 +60,7 @@ export function loadTikTokPixel(pixelId: string): void {
       first.parentNode?.insertBefore(script, first)
     }
     ttq.load(pixelId)
-    ttq.page()
+    // Page view: doar prin analytics.trackPageView (SPA) — evită dublu la init + mount.
   })(window, document, 'ttq')
   /* eslint-enable */
 }

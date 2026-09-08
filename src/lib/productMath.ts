@@ -1,21 +1,18 @@
-import type { CostSupplier, Product } from '../types/product'
-
-export function supplierCost(
-  a: number,
-  b: number,
-  which: CostSupplier,
-): number {
-  if (which === 'A') return a
-  if (which === 'B') return b
-  return Math.min(a, b)
-}
+import type { Product } from '../types/product'
 
 export function productCost(p: Product): number {
-  return supplierCost(p.supplierPriceA, p.supplierPriceB, p.costSupplier)
+  return Number.isFinite(p.purchasePrice) ? p.purchasePrice : 0
 }
 
 export function productProfit(p: Product): number {
   return p.salePrice - productCost(p)
+}
+
+/** Feed Meta: dacă avem cost, păstrăm doar SKU-urile cu marjă >= prag. Fără cost, nu excludem. */
+export function meetsMetaCatalogMargin(p: Product, minProfit: number): boolean {
+  if (!(minProfit > 0)) return true
+  if (!(p.purchasePrice > 0)) return true
+  return productProfit(p) + 0.009 >= minProfit
 }
 
 export function productMarginPercent(p: Product): number | null {

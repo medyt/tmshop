@@ -1,12 +1,18 @@
-export type CostSupplier = 'A' | 'B' | 'lower'
+export type BundleOfferMode = 'fixed_total' | 'percent_off'
+export type BundleOfferBadge = 'popular' | 'best'
 
-/** O observație de preț găsită online (sau altă sursă); media lor = preț propus. */
-export type MarketObservation = {
-  price: number
-  sourceUrl?: string
-  /** ISO date YYYY-MM-DD */
-  observedAt?: string
-  note?: string
+/**
+ * Oferte bundle (ex. 2/3 buc) configurabile din admin.
+ * - fixed_total: `value` este prețul TOTAL pentru `qty` bucăți.
+ * - percent_off: `value` este % discount aplicat la `salePrice * qty`.
+ */
+export type BundleOffer = {
+  qty: 2 | 3
+  enabled: boolean
+  mode: BundleOfferMode
+  value: number
+  title?: string
+  badge?: BundleOfferBadge
 }
 
 export type Product = {
@@ -21,9 +27,8 @@ export type Product = {
   googleCategory?: string
   /** Manufacturer Part Number — folosit când lipsește EAN-ul. */
   mpn?: string
-  supplierPriceA: number
-  supplierPriceB: number
-  costSupplier: CostSupplier
+  /** Preț de achiziție (cost) în RON — folosit la calculul profitului și marjei. */
+  purchasePrice: number
   salePrice: number
   /** Procent de discount afișat în magazin; prețul final rămâne `salePrice`. */
   discountPercent?: number
@@ -37,9 +42,8 @@ export type Product = {
   imageUrls: string[]
   /** Text descriptiv pentru catalogul intern (nu e site public). */
   description?: string
-  /** Mai multe prețuri găsite pe net — în UI se afișează media ca „preț propus”. */
-  marketObservations?: MarketObservation[]
   notes?: string
+  bundleOffers?: BundleOffer[]
 }
 
 export function createEmptyProduct(): Omit<Product, 'id'> {
@@ -50,15 +54,13 @@ export function createEmptyProduct(): Omit<Product, 'id'> {
     brand: '',
     googleCategory: '',
     mpn: '',
-    supplierPriceA: 0,
-    supplierPriceB: 0,
-    costSupplier: 'lower',
+    purchasePrice: 0,
     salePrice: 0,
     discountPercent: 0,
     stockQty: 0,
     imageUrls: [],
     description: '',
-    marketObservations: [],
     notes: '',
+    bundleOffers: [],
   }
 }

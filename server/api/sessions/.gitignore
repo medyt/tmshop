@@ -1,0 +1,4 @@
+# Fișiere sesiune PHP (nu în git).
+*
+!.gitignore
+!.htaccess

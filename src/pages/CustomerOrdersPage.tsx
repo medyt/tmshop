@@ -9,7 +9,6 @@ import {
   orderStatusLabel,
 } from '../lib/ordersApi'
 import { formatRon } from '../lib/shopCatalog'
-import { getDeliveryCarrierLabel } from '../lib/shippingCarriers'
 import { SITE_LEGAL } from '../lib/siteLegal'
 import type { Order } from '../types/order'
 
@@ -160,11 +159,7 @@ export function CustomerOrdersPage() {
 
                   <div className="shop-customer-order__footer">
                     <div className="shop-customer-order__details muted">
-                      {order.deliveryCarrier ? (
-                        <p>
-                          Curier: {getDeliveryCarrierLabel(order.deliveryCarrier)}
-                        </p>
-                      ) : null}
+                      <p>Curier: Curier</p>
                       {shippingAmount > 0 ? (
                         <p>Transport: {formatRon(shippingAmount)}</p>
                       ) : null}

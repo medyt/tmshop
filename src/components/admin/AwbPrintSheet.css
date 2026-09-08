@@ -82,6 +82,11 @@
   border-bottom: 1px solid #ececf0;
 }
 
+.awb-print__sku {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.02em;
+}
+
 .awb-print__total {
   margin: 0.85rem 0 0;
   font-size: 1rem;

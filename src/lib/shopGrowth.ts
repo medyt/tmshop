@@ -7,6 +7,7 @@ export type ProductReview = {
   authorName: string
   rating: number
   body: string
+  imageUrl?: string | null
   createdAt: string
 }
 
@@ -73,6 +74,12 @@ export async function fetchProductReviews(
     const authorName =
       typeof record.authorName === 'string' ? record.authorName : null
     const body = typeof record.body === 'string' ? record.body : null
+    const imageUrl =
+      typeof record.imageUrl === 'string'
+        ? record.imageUrl
+        : record.imageUrl === null
+          ? null
+          : undefined
     const rating =
       typeof record.rating === 'number' ? record.rating : Number(record.rating)
     const createdAt =
@@ -91,6 +98,7 @@ export async function fetchProductReviews(
       productId,
       authorName,
       body,
+      ...(imageUrl !== undefined ? { imageUrl } : {}),
       rating: Math.max(1, Math.min(5, Math.floor(rating))),
       createdAt,
     })
@@ -103,6 +111,7 @@ export async function submitProductReview(input: {
   authorName: string
   rating: number
   body: string
+  imageUrl?: string
 }): Promise<void> {
   const res = await apiFetch('/reviews.php', {
     method: 'POST',
@@ -111,6 +120,26 @@ export async function submitProductReview(input: {
   if (!res.ok) {
     throw new Error(await readErrorMessage(res))
   }
+}
+
+export async function uploadProductReviewImage(file: File): Promise<string> {
+  if (!isApiEnabled()) {
+    throw new Error('API-ul nu este configurat (VITE_API_URL).')
+  }
+  const form = new FormData()
+  form.append('image', file)
+  const res = await apiFetch('/review_upload.php', {
+    method: 'POST',
+    body: form,
+  })
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res))
+  }
+  const data = (await res.json()) as { url?: unknown }
+  if (typeof data.url !== 'string' || !data.url.trim()) {
+    throw new Error('Nu am primit URL-ul imaginii.')
+  }
+  return data.url.trim()
 }
 
 export type AdminReview = ProductReview & { approved: boolean }
@@ -140,6 +169,12 @@ export async function fetchAdminReviews(
     const authorName =
       typeof record.authorName === 'string' ? record.authorName : null
     const reviewBody = typeof record.body === 'string' ? record.body : null
+    const imageUrl =
+      typeof record.imageUrl === 'string'
+        ? record.imageUrl
+        : record.imageUrl === null
+          ? null
+          : undefined
     const rating =
       typeof record.rating === 'number' ? record.rating : Number(record.rating)
     const createdAt =
@@ -159,6 +194,7 @@ export async function fetchAdminReviews(
       productId,
       authorName,
       body: reviewBody,
+      ...(imageUrl !== undefined ? { imageUrl } : {}),
       rating: Math.max(1, Math.min(5, Math.floor(rating))),
       createdAt,
       approved: record.approved === true,
@@ -190,16 +226,38 @@ export function relatedProducts(
   limit = 4,
 ): Product[] {
   const category = product.category?.trim()
-  const sameCategory = products.filter(
-    (candidate) =>
-      candidate.id !== product.id &&
-      category &&
-      candidate.category?.trim() === category,
+  const others = products.filter((candidate) => candidate.id !== product.id)
+  const sameCategory = others.filter(
+    (candidate) => category && candidate.category?.trim() === category,
   )
-  const pool = sameCategory.length
-    ? sameCategory
-    : products.filter((candidate) => candidate.id !== product.id)
+  const rest = others.filter(
+    (candidate) => !category || candidate.category?.trim() !== category,
+  )
+  // Aceeași categorie primele (relevanță), apoi restul catalogului.
+  const pool = [...sameCategory, ...rest]
   return pool.slice(0, limit)
+}
+
+/** Upsell coș: produse din aceeași categorie ca linia principală, fără cele deja în coș. */
+export function cartUpsellProducts(
+  cartProducts: Product[],
+  catalog: Product[],
+  limit = 3,
+): Product[] {
+  if (cartProducts.length === 0) return []
+  const inCart = new Set(cartProducts.map((product) => product.id))
+  const pool = catalog.filter((product) => !inCart.has(product.id))
+  const seen = new Set<string>()
+  const out: Product[] = []
+  for (const seed of cartProducts) {
+    for (const candidate of relatedProducts(seed, pool, limit + cartProducts.length)) {
+      if (seen.has(candidate.id)) continue
+      seen.add(candidate.id)
+      out.push(candidate)
+      if (out.length >= limit) return out
+    }
+  }
+  return out
 }
 
 export function reviewAverage(reviews: ProductReview[]): number | null {

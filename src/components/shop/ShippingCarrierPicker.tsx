@@ -4,7 +4,7 @@ import {
   type DeliveryCarrierId,
 } from '../../lib/shippingCarriers'
 import { formatRon } from '../../lib/shopCatalog'
-import { SHIPPING_FLAT_RATE } from '../../lib/shopShipping'
+import { SHIPPING_FLAT_RATE, shippingFreeThreshold } from '../../lib/shopShipping'
 
 type ShippingCarrierPickerProps = {
   value: DeliveryCarrierId | null
@@ -23,7 +23,11 @@ export function ShippingCarrierPicker({
     <fieldset className="shop-carrier-picker shop-field shop-field--wide">
       <legend className="shop-carrier-picker__legend">Alege curierul</legend>
       <p className="shop-carrier-picker__hint muted">
-        Transport fix {formatRon(SHIPPING_FLAT_RATE)} — plată la livrare.
+        Transport {formatRon(SHIPPING_FLAT_RATE)}
+        {shippingFreeThreshold() > 0
+          ? `, gratuit de la ${formatRon(shippingFreeThreshold())}`
+          : ''}{' '}
+        — plată ramburs sau cu cardul.
       </p>
       <div
         className="shop-carrier-picker__options"

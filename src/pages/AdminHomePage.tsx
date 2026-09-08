@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { AdminLayout } from '../components/admin/AdminLayout'
+import { AdminStatsDashboard } from './AdminStatsPage'
 
 const adminSections = [
   {
@@ -27,6 +28,12 @@ const adminSections = [
       'Aprobă sau respinge recenziile trimise de clienți înainte să apară pe site.',
   },
   {
+    to: '/admin/statistici-lunare',
+    title: 'Statistici lunare',
+    description:
+      'Profitabilitate pe luni, cheltuieli, marje și TVA — raport anual.',
+  },
+  {
     to: '/admin/retururi',
     title: 'Retururi',
     description:
@@ -41,14 +48,19 @@ export function AdminHomePage() {
       lead="Alege ce vrei să faci în zona de administrare."
       isHome
     >
-      <nav className="admin-menu" aria-label="Secțiuni admin">
-        {adminSections.map((section) => (
-          <Link key={section.to} to={section.to} className="admin-menu__card">
-            <h2 className="admin-menu__title">{section.title}</h2>
-            <p className="admin-menu__description muted">{section.description}</p>
-          </Link>
-        ))}
-      </nav>
+      <div className="admin-home">
+        <nav className="admin-menu" aria-label="Secțiuni admin">
+          {adminSections.map((section) => (
+            <Link key={section.to} to={section.to} className="admin-menu__card">
+              <h2 className="admin-menu__title">{section.title}</h2>
+              <p className="admin-menu__description muted">
+                {section.description}
+              </p>
+            </Link>
+          ))}
+        </nav>
+        <AdminStatsDashboard />
+      </div>
     </AdminLayout>
   )
 }

@@ -63,6 +63,8 @@ CREATE TABLE IF NOT EXISTS product_reviews (
   KEY idx_product_reviews_approved (approved)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CALL shoptop_add_column('product_reviews', 'image_url', "image_url VARCHAR(1024) NULL AFTER body");
+
 -- -----------------------------------------------------------------------------
 -- 2. Atribute feed pe products (Google / Meta / TikTok)
 -- -----------------------------------------------------------------------------
@@ -72,6 +74,8 @@ CALL shoptop_add_column('products', 'google_category', "google_category VARCHAR(
 CALL shoptop_add_column('products', 'mpn', "mpn VARCHAR(64) NULL AFTER google_category");
 -- Mapare catre catalogul BaseLinker (ID-ul produsului din inventory).
 CALL shoptop_add_column('products', 'baselinker_product_id', "baselinker_product_id VARCHAR(64) NULL AFTER mpn");
+-- Pachete (bundle) configurabile din admin (ex. 2/3 buc cu discount).
+CALL shoptop_add_column('products', 'bundle_offers', "bundle_offers JSON NULL AFTER notes");
 
 -- -----------------------------------------------------------------------------
 -- 3. Coloane de plata pe orders (Netopia + BaseLinker)

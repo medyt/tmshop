@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ProductForm } from '../components/ProductForm'
 import { AdminLayout } from '../components/admin/AdminLayout'
+import { ConfirmModal } from '../components/admin/ConfirmModal'
 import { ProductTable } from '../components/ProductTable'
+import { buildMetaCatalogCsv } from '../lib/metaCatalogCsv'
+import {
+  fetchProductById,
+  fetchProducts,
+  isProductsApiEnabled,
+  syncSmartbillStock,
+} from '../lib/productsApi'
+import { SITE_LEGAL } from '../lib/siteLegal'
 import { parseProductsJson } from '../lib/validateImport'
 import type { Product } from '../types/product'
 
@@ -11,6 +20,7 @@ type GestiunePageProps = {
   updateProduct: (p: Product) => void
   removeProduct: (id: string) => void
   replaceAll: (products: Product[]) => void
+  reloadProducts: () => void
 }
 
 type FormMode =
@@ -18,15 +28,24 @@ type FormMode =
   | { kind: 'new' }
   | { kind: 'edit'; product: Product }
 
+type PendingConfirm =
+  | { kind: 'deleteProduct'; id: string; name: string }
+  | { kind: 'restoreBackup'; products: Product[] }
+
 export function GestiunePage({
   products,
   addProduct,
   updateProduct,
   removeProduct,
   replaceAll,
+  reloadProducts,
 }: GestiunePageProps) {
   const [formMode, setFormMode] = useState<FormMode>(null)
+  const [pending, setPending] = useState<PendingConfirm | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const [syncNote, setSyncNote] = useState<string | null>(null)
   const importRef = useRef<HTMLInputElement>(null)
+  const syncingRef = useRef(false)
 
   const selectedId =
     formMode?.kind === 'edit' ? formMode.product.id : null
@@ -39,22 +58,36 @@ export function GestiunePage({
       } else {
         addProduct(p)
       }
-      setFormMode({ kind: 'edit', product: p })
+      setFormMode(null)
     },
     [addProduct, products, updateProduct],
   )
 
   const handleDelete = useCallback(
     (id: string) => {
-      if (!globalThis.confirm('Ștergi acest produs?')) return
-      removeProduct(id)
-      setFormMode(null)
+      const product = products.find((x) => x.id === id)
+      setPending({
+        kind: 'deleteProduct',
+        id,
+        name: product?.name ?? id,
+      })
     },
-    [removeProduct],
+    [products],
   )
 
-  const handleExport = useCallback(() => {
-    const blob = new Blob([JSON.stringify(products, null, 2)], {
+  const handleExport = useCallback(async () => {
+    let payload = products
+    if (isProductsApiEnabled()) {
+      try {
+        payload = await fetchProducts({ full: true })
+      } catch {
+        globalThis.alert(
+          'Nu am putut încărca descrierile complete pentru backup. Încearcă din nou.',
+        )
+        return
+      }
+    }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: 'application/json',
     })
     const url = URL.createObjectURL(blob)
@@ -64,6 +97,46 @@ export function GestiunePage({
     a.click()
     URL.revokeObjectURL(url)
   }, [products])
+
+  const handleExportMetaCatalog = useCallback(async () => {
+    let payload = products
+    if (isProductsApiEnabled()) {
+      try {
+        payload = await fetchProducts({ full: true })
+      } catch {
+        globalThis.alert(
+          'Nu am putut încărca produsele pentru catalogul Meta. Încearcă din nou.',
+        )
+        return
+      }
+    }
+    const csv = buildMetaCatalogCsv(payload)
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `catalog_products-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [products])
+
+  const openEdit = useCallback(
+    async (id: string) => {
+      const listed = products.find((x) => x.id === id)
+      if (!listed) return
+      if (!isProductsApiEnabled()) {
+        setFormMode({ kind: 'edit', product: listed })
+        return
+      }
+      try {
+        const full = await fetchProductById(id)
+        setFormMode({ kind: 'edit', product: full })
+      } catch {
+        setFormMode({ kind: 'edit', product: listed })
+      }
+    },
+    [products],
+  )
 
   useEffect(() => {
     if (!formMode) return
@@ -75,13 +148,13 @@ export function GestiunePage({
   }, [formMode])
 
   useEffect(() => {
-    if (!formMode) return
+    if (!formMode || pending) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setFormMode(null)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [formMode])
+  }, [formMode, pending])
 
   const handleImportFile = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -99,24 +172,72 @@ export function GestiunePage({
           )
           return
         }
-        const ok = globalThis.confirm(
-          `Restaurezi lista din backup? Se vor înlocui cele ${products.length} produse curente cu ${parsed.length} din fișier.`,
-        )
-        if (!ok) return
-        replaceAll(parsed)
-        setFormMode(null)
+        setPending({ kind: 'restoreBackup', products: parsed })
       }
       reader.readAsText(file)
     },
-    [products.length, replaceAll],
+    [],
   )
+
+  const handleSyncSmartbill = useCallback(async () => {
+    if (!isProductsApiEnabled() || syncingRef.current) return
+    syncingRef.current = true
+    setSyncing(true)
+    setSyncNote(null)
+    try {
+      const result = await syncSmartbillStock()
+      reloadProducts()
+      const warehouse = result.warehouse ? ` „${result.warehouse}”` : ''
+      const missing =
+        result.missing > 0
+          ? ` ${result.missing} SKU fără stoc în SmartBill (setate 0).`
+          : ''
+      setSyncNote(
+        `Stoc SmartBill${warehouse}: ${result.updated} actualizate, ${result.unchanged} neschimbate.${missing}`,
+      )
+    } catch (err: unknown) {
+      setSyncNote(
+        err instanceof Error
+          ? err.message
+          : 'Nu am putut sincroniza stocul din SmartBill.',
+      )
+    } finally {
+      syncingRef.current = false
+      setSyncing(false)
+    }
+  }, [reloadProducts])
+
+  useEffect(() => {
+    void handleSyncSmartbill()
+  }, [handleSyncSmartbill])
 
   return (
     <AdminLayout
       title="Gestiune produse"
-      lead="Actualizează stocurile, prețurile și detaliile produselor."
+      lead="Stocurile urmează SmartBill: scad la ambalare/expediere (în tranzit) și revin după retur."
       actions={
         <>
+          {isProductsApiEnabled() ? (
+            <button
+              type="button"
+              className="btn secondary"
+              disabled={syncing}
+              onClick={() => {
+                void handleSyncSmartbill()
+              }}
+            >
+              {syncing ? 'Sincronizez stoc…' : 'Sincronizează stoc SmartBill'}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="btn secondary"
+            onClick={() => {
+              void handleExportMetaCatalog()
+            }}
+          >
+            Export catalog Meta (.csv)
+          </button>
           <button
             type="button"
             className="btn primary"
@@ -162,12 +283,22 @@ export function GestiunePage({
       }
     >
       <section className="panel panel--list" aria-label="Lista produse">
+        <p className="gestiune-sync-note muted">
+          Feed Meta (update automat):{' '}
+          <a href={`${SITE_LEGAL.siteUrl}/catalog.csv`}>
+            {SITE_LEGAL.siteUrl}/catalog.csv
+          </a>
+        </p>
+        {syncNote ? (
+          <p className="gestiune-sync-note muted" role="status">
+            {syncNote}
+          </p>
+        ) : null}
         <ProductTable
           products={products}
           selectedId={selectedId}
           onSelect={(id) => {
-            const p = products.find((x) => x.id === id)
-            if (p) setFormMode({ kind: 'edit', product: p })
+            void openEdit(id)
           }}
         />
       </section>
@@ -177,7 +308,7 @@ export function GestiunePage({
           className="modal-backdrop"
           role="presentation"
           onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setFormMode(null)
+            if (e.target === e.currentTarget && !pending) setFormMode(null)
           }}
         >
           <div
@@ -210,6 +341,44 @@ export function GestiunePage({
           </div>
         </div>
       ) : null}
+
+      <ConfirmModal
+        open={pending?.kind === 'deleteProduct'}
+        tone="danger"
+        title="Ștergi produsul?"
+        description={
+          pending?.kind === 'deleteProduct'
+            ? `„${pending.name}” va fi eliminat din gestiune. Acțiunea nu poate fi anulată.`
+            : ''
+        }
+        confirmLabel="Șterge produsul"
+        onCancel={() => setPending(null)}
+        onConfirm={() => {
+          if (pending?.kind !== 'deleteProduct') return
+          removeProduct(pending.id)
+          setFormMode(null)
+          setPending(null)
+        }}
+      />
+
+      <ConfirmModal
+        open={pending?.kind === 'restoreBackup'}
+        tone="warning"
+        title="Restaurezi din backup?"
+        description={
+          pending?.kind === 'restoreBackup'
+            ? `Se vor înlocui cele ${products.length} produse curente cu ${pending.products.length} din fișier.`
+            : ''
+        }
+        confirmLabel="Restaurează lista"
+        onCancel={() => setPending(null)}
+        onConfirm={() => {
+          if (pending?.kind !== 'restoreBackup') return
+          replaceAll(pending.products)
+          setFormMode(null)
+          setPending(null)
+        }}
+      />
     </AdminLayout>
   )
 }

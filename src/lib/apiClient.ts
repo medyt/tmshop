@@ -35,7 +35,10 @@ export async function readErrorMessage(res: Response): Promise<string> {
       snippet.startsWith('<') ||
       /<!DOCTYPE|<html[\s>]/i.test(text.slice(0, 400))
     if (looksLikeHtml) {
-      return 'Serverul a returnat un raspuns invalid (probabil HTML, nu JSON). In .env foloseste VITE_API_URL (cu „URL”, nu „URI”), verifica calea catre API-ul PHP si logurile de pe server.'
+      if (res.status === 503) {
+        return 'Serverul API este temporar indisponibil (503). De obicei e limită de resurse pe hosting (LiteSpeed) la încărcarea listelor mari de comenzi — reîncearcă peste câteva secunde.'
+      }
+      return 'Serverul a returnat un raspuns invalid (probabil HTML, nu JSON). Verifică calea către API-ul PHP (/shoptop-api), că VITE_API_URL e setat corect, și logurile de pe server.'
     }
     return snippet || `Cererea a esuat (${res.status}).`
   }
@@ -49,7 +52,7 @@ export async function apiFetch(
   options: { credentials?: RequestCredentials } = {},
 ): Promise<Response> {
   const headers = new Headers(init.headers)
-  if (init.body && !headers.has('Content-Type')) {
+  if (init.body && typeof init.body === 'string' && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
 

@@ -1,8 +1,7 @@
 import { useId, useRef, useState } from 'react'
 import {
   createEmptyProduct,
-  type CostSupplier,
-  type MarketObservation,
+  type BundleOffer,
   type Product,
 } from '../types/product'
 import {
@@ -14,8 +13,11 @@ import {
   clampImageUrls,
   MAX_IMAGES_PER_PRODUCT,
 } from '../lib/productImages'
+import { isProductsApiEnabled, uploadProductImage } from '../lib/productsApi'
+import { ensureUploadableImage, isHeicImage } from '../lib/imageFile'
 import { ProductImage } from './ProductImage'
-import { proposedPriceAverageFromObservations } from '../lib/proposedPrice'
+import { RichTextEditor } from './RichTextEditor'
+import { sanitizeHtml } from '../lib/richText'
 import {
   formatRon,
   productCompareAtPrice,
@@ -36,16 +38,14 @@ function draftFromMode(mode: Mode): Omit<Product, 'id'> {
       brand: p.brand ?? '',
       googleCategory: p.googleCategory ?? '',
       mpn: p.mpn ?? '',
-      supplierPriceA: p.supplierPriceA,
-      supplierPriceB: p.supplierPriceB,
-      costSupplier: p.costSupplier,
+      purchasePrice: p.purchasePrice,
       salePrice: p.salePrice,
       discountPercent: p.discountPercent ?? 0,
       stockQty: p.stockQty ?? 0,
       imageUrls: [...p.imageUrls],
       description: p.description ?? '',
-      marketObservations: [...(p.marketObservations ?? [])],
       notes: p.notes ?? '',
+      bundleOffers: [...(p.bundleOffers ?? [])],
     }
   }
   return createEmptyProduct()
@@ -72,13 +72,9 @@ function normalizeProductDraft(
     brand: draft.brand?.trim() || undefined,
     googleCategory: draft.googleCategory?.trim() || undefined,
     mpn: draft.mpn?.trim() || undefined,
-    supplierPriceA: Number.isFinite(draft.supplierPriceA)
-      ? draft.supplierPriceA
+    purchasePrice: Number.isFinite(draft.purchasePrice)
+      ? draft.purchasePrice
       : 0,
-    supplierPriceB: Number.isFinite(draft.supplierPriceB)
-      ? draft.supplierPriceB
-      : 0,
-    costSupplier: draft.costSupplier,
     salePrice: Number.isFinite(draft.salePrice) ? draft.salePrice : 0,
     discountPercent: (() => {
       const value = draft.discountPercent ?? 0
@@ -91,19 +87,31 @@ function normalizeProductDraft(
       return Math.max(0, Math.floor(n))
     })(),
     imageUrls: clampImageUrls(draft.imageUrls),
-    description: draft.description?.trim() || undefined,
-    marketObservations: (() => {
-      const obs = (draft.marketObservations ?? [])
-        .map((o) => ({
-          price: o.price,
-          sourceUrl: o.sourceUrl?.trim() || undefined,
-          observedAt: o.observedAt?.trim() || undefined,
-          note: o.note?.trim() || undefined,
-        }))
-        .filter((o) => Number.isFinite(o.price))
-      return obs.length ? obs : undefined
-    })(),
+    description: sanitizeHtml(draft.description ?? '') || undefined,
     notes: draft.notes?.trim() || undefined,
+    bundleOffers: (() => {
+      const offers = (draft.bundleOffers ?? [])
+        .filter((o): o is BundleOffer => !!o && typeof o === 'object')
+        .map((o) => ({
+          qty: o.qty,
+          enabled: Boolean(o.enabled),
+          mode: o.mode,
+          value: typeof o.value === 'number' ? o.value : Number(o.value),
+          title: typeof o.title === 'string' ? o.title.trim() : undefined,
+          badge: o.badge,
+        }))
+        .filter((o) => (o.qty === 2 || o.qty === 3))
+        .filter((o) => o.mode === 'fixed_total' || o.mode === 'percent_off')
+        .filter((o) => Number.isFinite(o.value) && o.value > 0)
+        .map((o) => ({
+          ...o,
+          value: Math.round(o.value * 100) / 100,
+          title: o.title ? o.title : undefined,
+          badge: o.badge === 'popular' || o.badge === 'best' ? o.badge : undefined,
+        }))
+        .sort((a, b) => a.qty - b.qty)
+      return offers.length ? offers : undefined
+    })(),
   }
 }
 
@@ -112,9 +120,9 @@ function readFileAsDataURL(file: File): Promise<string> {
     const r = new FileReader()
     r.onload = () => {
       if (typeof r.result === 'string') resolve(r.result)
-      else reject(new Error('read'))
+      else reject(new Error('Nu am putut citi fișierul.'))
     }
-    r.onerror = () => reject(new Error('read'))
+    r.onerror = () => reject(new Error('Nu am putut citi fișierul.'))
     r.readAsDataURL(file)
   })
 }
@@ -131,7 +139,10 @@ export function ProductForm({
   const [draft, setDraft] = useState<Omit<Product, 'id'>>(() =>
     draftFromMode(mode),
   )
-  const [pendingUrl, setPendingUrl] = useState('')
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [imageBusy, setImageBusy] = useState(false)
+  const [imageError, setImageError] = useState<string | null>(null)
+  const [imageNotice, setImageNotice] = useState<string | null>(null)
 
   const cost = normalizeProductDraft(
     draft,
@@ -144,6 +155,7 @@ export function ProductForm({
   const discountPercent = productDiscountPercent(cost)
 
   const slotsLeft = MAX_IMAGES_PER_PRODUCT - draft.imageUrls.length
+  const bundleOffersDraft = draft.bundleOffers ?? []
 
   function handleNumber<K extends keyof Omit<Product, 'id'>>(
     key: K,
@@ -156,48 +168,148 @@ export function ProductForm({
     }))
   }
 
-  function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = e.target.files
-    e.target.value = ''
-    if (!files?.length) return
-    const images = Array.from(files).filter((f) => f.type.startsWith('image/'))
-    if (!images.length) return
-
-    void (async () => {
-      const next = [...draft.imageUrls]
-      for (const file of images) {
-        if (next.length >= MAX_IMAGES_PER_PRODUCT) break
-        try {
-          next.push(await readFileAsDataURL(file))
-        } catch {
-          /* skip broken read */
-        }
+  function getBundleOffer(qty: 2 | 3): BundleOffer {
+    const existing = bundleOffersDraft.find((o) => o.qty === qty)
+    if (existing) {
+      return {
+        qty,
+        enabled: Boolean(existing.enabled),
+        mode: existing.mode === 'percent_off' ? 'percent_off' : 'fixed_total',
+        value: Number.isFinite(existing.value) ? existing.value : cost.salePrice * qty,
+        title: existing.title,
+        badge: existing.badge,
       }
-      setDraft((d) => ({
-        ...d,
-        imageUrls: clampImageUrls(next),
-      }))
-    })()
+    }
+    return {
+      qty,
+      enabled: false,
+      mode: 'fixed_total',
+      value: Math.round(cost.salePrice * qty * 100) / 100,
+    }
   }
 
-  function addPendingUrl() {
-    const u = pendingUrl.trim()
-    if (!u) return
-    try {
-      // Accept valid URLs (http / https / data from paste)
-      const parsed = new URL(u)
-      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-        return
-      }
-    } catch {
+  function patchBundleOffer(qty: 2 | 3, patch: Partial<BundleOffer>) {
+    setDraft((d) => {
+      const current = d.bundleOffers ?? []
+      const prev = current.find((o) => o.qty === qty) ?? getBundleOffer(qty)
+      const next: BundleOffer = { ...prev, ...patch, qty }
+      const without = current.filter((o) => o.qty !== qty)
+      return { ...d, bundleOffers: [...without, next].sort((a, b) => a.qty - b.qty) }
+    })
+  }
+
+  function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const input = e.target
+    // `input.files` este o listă „vie": setarea `value = ''` (ca să permitem
+    // re-selectarea aceluiași fișier) o golește în browserele recente. Copiem
+    // fișierele într-un array ÎNAINTE de reset, altfel `length` devine 0 și
+    // handler-ul iese silențios (fără preview, fără upload, fără eroare).
+    const selected = input.files ? Array.from(input.files) : []
+    input.value = ''
+    if (selected.length === 0 || imageBusy) return
+
+    const images = selected.filter((f) => {
+      if (f.type.startsWith('image/')) return true
+      return /\.(jpe?g|png|webp|gif|heic|heif)$/i.test(f.name)
+    })
+    if (!images.length) {
+      setImageError(
+        'Selectează fișiere imagine (JPG, PNG, WEBP, GIF sau HEIC de pe telefon).',
+      )
       return
     }
-    setDraft((d) => {
-      if (d.imageUrls.length >= MAX_IMAGES_PER_PRODUCT) return d
-      const imageUrls = clampImageUrls([...d.imageUrls, u])
-      return { ...d, imageUrls }
-    })
-    setPendingUrl('')
+
+    void (async () => {
+      setImageBusy(true)
+      setImageError(null)
+      setImageNotice(null)
+
+      const room = Math.max(0, MAX_IMAGES_PER_PRODUCT - draft.imageUrls.length)
+      const batch = images.slice(0, room)
+      if (batch.length === 0) {
+        setImageError(`Poți adăuga maxim ${MAX_IMAGES_PER_PRODUCT} imagini.`)
+        setImageBusy(false)
+        return
+      }
+
+      const apiEnabled = isProductsApiEnabled()
+      const failures: string[] = []
+      let added = 0
+
+      for (const file of batch) {
+        // 0) HEIC/HEIF de pe telefon → convertim în JPEG (altfel nici preview-ul,
+        //    nici serverul nu îl pot procesa).
+        let uploadable: File
+        try {
+          if (isHeicImage(file)) {
+            setImageNotice('Se convertește poza din HEIC…')
+          }
+          uploadable = await ensureUploadableImage(file)
+        } catch (err: unknown) {
+          failures.push(
+            err instanceof Error ? err.message : 'Format imagine nesuportat.',
+          )
+          continue
+        }
+
+        // 1) Preview imediat (local) — ca să apară în listă pe loc.
+        let preview: string
+        try {
+          preview = await readFileAsDataURL(uploadable)
+        } catch {
+          failures.push(`Nu am putut citi fișierul „${file.name}”.`)
+          continue
+        }
+
+        setDraft((d) => ({
+          ...d,
+          imageUrls: clampImageUrls([...d.imageUrls, preview]),
+        }))
+        added++
+        setImageNotice(
+          apiEnabled ? 'Poză adăugată. Se salvează pe server…' : null,
+        )
+
+        // 2) Upload pe server și înlocuire preview → URL public.
+        if (!apiEnabled) {
+          continue
+        }
+
+        try {
+          const serverUrl = await uploadProductImage(uploadable)
+          setDraft((d) => ({
+            ...d,
+            imageUrls: d.imageUrls.map((url) =>
+              url === preview ? serverUrl : url,
+            ),
+          }))
+        } catch (err: unknown) {
+          const message =
+            err instanceof Error ? err.message : 'Upload eșuat pe server.'
+          failures.push(
+            `${message} — verifică product_upload.php și folderul uploads/products (permisiuni 755/775).`,
+          )
+          // Scoatem preview-ul local — altfel la Salvare trimitem data-URL uriaș.
+          setDraft((d) => ({
+            ...d,
+            imageUrls: d.imageUrls.filter((url) => url !== preview),
+          }))
+          added--
+        }
+      }
+
+      if (failures.length > 0) {
+        setImageError(failures[0])
+        setImageNotice(null)
+      } else if (added > 0) {
+        setImageNotice(
+          apiEnabled
+            ? 'Poză salvată pe server. Apasă Salvează la produs.'
+            : 'Poză adăugată. Apasă Salvează.',
+        )
+      }
+      setImageBusy(false)
+    })()
   }
 
   function removeAt(index: number) {
@@ -207,58 +319,12 @@ export function ProductForm({
     }))
   }
 
-  function move(index: number, delta: -1 | 1) {
-    setDraft((d) => {
-      const arr = [...d.imageUrls]
-      const j = index + delta
-      if (j < 0 || j >= arr.length) return d
-      ;[arr[index], arr[j]] = [arr[j], arr[index]]
-      return { ...d, imageUrls: arr }
-    })
-  }
-
-  const obsDraft = draft.marketObservations ?? []
-  const proposedAvg = proposedPriceAverageFromObservations(obsDraft)
-
-  function addMarketObservation() {
-    setDraft((d) => ({
-      ...d,
-      marketObservations: [
-        ...(d.marketObservations ?? []),
-        { price: 0, sourceUrl: '', observedAt: '', note: '' },
-      ],
-    }))
-  }
-
-  function updateMarketObservation(
-    index: number,
-    patch: Partial<MarketObservation>,
-  ) {
-    setDraft((d) => {
-      const list = [...(d.marketObservations ?? [])]
-      const cur = list[index]
-      if (!cur) return d
-      list[index] = { ...cur, ...patch }
-      return { ...d, marketObservations: list }
-    })
-  }
-
-  function removeMarketObservation(index: number) {
-    setDraft((d) => ({
-      ...d,
-      marketObservations: (d.marketObservations ?? []).filter(
-        (_, i) => i !== index,
-      ),
-    }))
-  }
-
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     const newId = mode.kind === 'edit' ? mode.product.id : crypto.randomUUID()
     onSave(normalizeProductDraft(draft, newId))
     if (mode.kind === 'new') {
       setDraft(createEmptyProduct())
-      setPendingUrl('')
     }
   }
 
@@ -304,14 +370,8 @@ export function ProductForm({
             <li>
               Galerie imagini: mai multe poze per produs (încărcare sau URL-uri).
             </li>
-            <li>
-              Prețuri Elena și Basel (introdu ce îți comunică fiecare furnizor).
-            </li>
-            <li>Preț de vânzare și cost folosit pentru marjă.</li>
-            <li>
-              Opțional: poți adăuga mai multe prețuri văzute online — aplicația
-              calculează automat media ca „preț propus”.
-            </li>
+            <li>Preț de achiziție (costul la care iei produsul).</li>
+            <li>Preț de vânzare — profitul și marja se calculează automat.</li>
           </ol>
         </aside>
       ) : null}
@@ -330,7 +390,7 @@ export function ProductForm({
       </label>
 
       <label className="field">
-        <span>SKU (opțional)</span>
+        <span>SKU (catalog Meta / facturi)</span>
         <input
           type="text"
           value={draft.sku}
@@ -339,6 +399,10 @@ export function ProductForm({
           }
           autoComplete="off"
         />
+        <p className="hint muted">
+          După lansare, SKU-ul din feed nu se mai schimbă. Poți actualiza preț,
+          titlu și imagini; codul rămâne fix.
+        </p>
       </label>
 
       <fieldset className="fieldset">
@@ -401,72 +465,32 @@ export function ProductForm({
       </fieldset>
 
       <label className="field">
-        <span>Descriere (catalog intern)</span>
+        <span>Descriere produs</span>
         <span className="field-microhint">
-          Specificații, ce include setul, garanție — vizibil doar în această
-          aplicație.
+          Text bogat afișat pe pagina produsului: titluri, liste, linkuri,
+          imagini. Folosește bara de instrumente pentru formatare.
         </span>
-        <textarea
-          rows={5}
-          value={draft.description}
-          onChange={(e) =>
-            setDraft((d) => ({ ...d, description: e.target.value }))
-          }
-          placeholder="Ex.: Set blender 4 în 1, 1500 W, tocător 500 ml, pahar 600 ml…"
-          spellCheck={true}
+        <RichTextEditor
+          value={draft.description ?? ''}
+          onChange={(html) => setDraft((d) => ({ ...d, description: html }))}
+          placeholder="Ex.: Descriere detaliată, specificații, ce include setul, garanție…"
+          ariaLabel="Descriere produs"
         />
       </label>
 
-      <div className="field-row">
-        <label className="field">
-          <span>Preț Elena</span>
-          <span className="field-microhint">
-            După ce îl afli de la Elena
-          </span>
-          <input
-            type="number"
-            inputMode="decimal"
-            step="any"
-            min={0}
-            value={draft.supplierPriceA}
-            onChange={(e) =>
-              handleNumber('supplierPriceA', e.target.value)
-            }
-          />
-        </label>
-        <label className="field">
-          <span>Preț Basel</span>
-          <span className="field-microhint">
-            După ce îl afli de la Basel
-          </span>
-          <input
-            type="number"
-            inputMode="decimal"
-            step="any"
-            min={0}
-            value={draft.supplierPriceB}
-            onChange={(e) =>
-              handleNumber('supplierPriceB', e.target.value)
-            }
-          />
-        </label>
-      </div>
-
       <label className="field">
-        <span>Cost folosit la profit</span>
-        <select
-          value={draft.costSupplier}
-          onChange={(e) =>
-            setDraft((d) => ({
-              ...d,
-              costSupplier: e.target.value as CostSupplier,
-            }))
-          }
-        >
-          <option value="lower">Cel mai mic (Elena sau Basel)</option>
-          <option value="A">Elena</option>
-          <option value="B">Basel</option>
-        </select>
+        <span>Preț achiziție</span>
+        <span className="field-microhint">
+          Costul la care iei produsul de la furnizor (RON)
+        </span>
+        <input
+          type="number"
+          inputMode="decimal"
+          step="any"
+          min={0}
+          value={draft.purchasePrice}
+          onChange={(e) => handleNumber('purchasePrice', e.target.value)}
+        />
       </label>
 
       <label className="field">
@@ -513,6 +537,103 @@ export function ProductForm({
         />
       </label>
 
+      <fieldset className="fieldset">
+        <legend>Pachete (bundle) pe pagina produsului</legend>
+        <p className="hint">
+          Dacă activezi pachetele aici, pe pagina produsului apar opțiuni 2 / 3 bucăți
+          cu preț total fix sau discount procentual.
+        </p>
+
+        {[2, 3].map((qty) => {
+          const q = qty as 2 | 3
+          const offer = getBundleOffer(q)
+          const valueInvalid = !Number.isFinite(offer.value) || offer.value <= 0
+          return (
+            <div key={q} className="field">
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={offer.enabled}
+                  onChange={(e) => patchBundleOffer(q, { enabled: e.target.checked })}
+                />
+                <span>
+                  Activează pachet {q} bucăți
+                </span>
+              </label>
+
+              <div className="field-row" style={{ marginTop: 8 }}>
+                <label className="field">
+                  <span>Tip</span>
+                  <select
+                    value={offer.mode}
+                    onChange={(e) => {
+                      const mode = e.target.value === 'percent_off' ? 'percent_off' : 'fixed_total'
+                      patchBundleOffer(q, {
+                        mode,
+                        value:
+                          mode === 'percent_off'
+                            ? Math.min(99, Math.max(1, Math.round(offer.value || 10)))
+                            : Math.round((offer.value || cost.salePrice * q) * 100) / 100,
+                      })
+                    }}
+                  >
+                    <option value="fixed_total">Preț total (RON)</option>
+                    <option value="percent_off">Discount (%)</option>
+                  </select>
+                </label>
+
+                <label className="field">
+                  <span>{offer.mode === 'percent_off' ? 'Discount (%)' : `Total (RON) pentru ${q} buc`}</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="any"
+                    min={0}
+                    value={offer.value}
+                    onChange={(e) => patchBundleOffer(q, { value: Number(e.target.value) })}
+                  />
+                </label>
+
+                <label className="field">
+                  <span>Badge (opțional)</span>
+                  <select
+                    value={offer.badge ?? ''}
+                    onChange={(e) =>
+                      patchBundleOffer(q, {
+                        badge:
+                          e.target.value === 'popular' || e.target.value === 'best'
+                            ? (e.target.value as BundleOffer['badge'])
+                            : undefined,
+                      })
+                    }
+                  >
+                    <option value="">—</option>
+                    <option value="popular">popular</option>
+                    <option value="best">best</option>
+                  </select>
+                </label>
+              </div>
+
+              <label className="field" style={{ marginTop: 8 }}>
+                <span>Titlu (opțional)</span>
+                <input
+                  type="text"
+                  placeholder={`ex. Pachet ${q} bucăți`}
+                  value={offer.title ?? ''}
+                  onChange={(e) => patchBundleOffer(q, { title: e.target.value })}
+                />
+              </label>
+
+              {offer.enabled && valueInvalid ? (
+                <p className="hint" style={{ color: '#ff6b6b' }}>
+                  Completează o valoare validă (&gt; 0), altfel pachetul nu se salvează.
+                </p>
+              ) : null}
+            </div>
+          )
+        })}
+      </fieldset>
+
       <div className="summary-cards">
         <div className="summary-cards__item">
           <span className="muted">Cost estimat</span>
@@ -531,228 +652,141 @@ export function ProductForm({
       </div>
 
       <fieldset className="fieldset">
-        <legend>Imagini (galerie)</legend>
-        <p className="hint">
-          Poți adăuga mai multe poze per produs (ex. 5–6): încarcă din calculator
-          sau lipește URL-uri (http/https). Prima poză e folosită ca miniatură în
-          listă. Ordinea controlezi cu săgețile.
-        </p>
-        <p className="hint muted gallery-limit">
-          Maximum {MAX_IMAGES_PER_PRODUCT} imagini.
-          {slotsLeft <= 0
-            ? ' Ai atins limita.'
-            : ` Mai poți adăuga ${slotsLeft}.`}
-        </p>
+        <legend>Imagini ({draft.imageUrls.length}/{MAX_IMAGES_PER_PRODUCT})</legend>
 
-        <div className="gallery-toolbar">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            className="sr-only"
-            id={`${formId}-file`}
-            onChange={handleFiles}
-          />
-          <button
-            type="button"
-            className="btn secondary"
-            disabled={slotsLeft <= 0}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            Încarcă poze (una sau mai multe)
-          </button>
-        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,.heic,.heif"
+          multiple
+          className="sr-only"
+          id={`${formId}-file`}
+          onChange={handleFiles}
+          disabled={imageBusy || slotsLeft <= 0}
+        />
 
-        <div className="field add-url-row">
-          <label className="field field--grow">
-            <span>Adaugă URL imagine</span>
-            <input
-              type="url"
-              placeholder="https://..."
-              value={pendingUrl}
-              onChange={(e) => setPendingUrl(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  addPendingUrl()
-                }
-              }}
-            />
-          </label>
-          <button
-            type="button"
-            className="btn secondary add-url-btn"
-            disabled={slotsLeft <= 0 || !pendingUrl.trim()}
-            onClick={addPendingUrl}
-          >
-            Adaugă URL
-          </button>
-        </div>
+        {imageError ? (
+          <p className="form-error" role="alert">
+            {imageError}
+          </p>
+        ) : null}
+        {imageNotice && !imageError ? (
+          <p className="form-notice" role="status">
+            {imageNotice}
+          </p>
+        ) : null}
+        {imageBusy ? (
+          <p className="muted">Se încarcă imaginile…</p>
+        ) : null}
 
         {draft.imageUrls.length > 0 ? (
-          <ul className="gallery-grid">
+          <div className="gallery-v2">
             {draft.imageUrls.map((url, index) => (
-              <li key={`${index}-${url.slice(0, 48)}`} className="gallery-item">
-                <div className="gallery-item__thumb">
-                  <ProductImage
-                    src={url}
-                    alt=""
-                    loading="eager"
-                    placeholderClassName="gallery-item__placeholder"
-                  />
-                  {index === 0 ? (
-                    <span className="gallery-item__badge">Principală</span>
-                  ) : null}
-                </div>
-                <div className="gallery-item__actions">
-                  <button
-                    type="button"
-                    className="btn icon-btn"
-                    title="Mută mai sus"
-                    disabled={index === 0}
-                    onClick={() => move(index, -1)}
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    className="btn icon-btn"
-                    title="Mută mai jos"
-                    disabled={index === draft.imageUrls.length - 1}
-                    onClick={() => move(index, 1)}
-                  >
-                    ↓
-                  </button>
-                  <button
-                    type="button"
-                    className="btn icon-btn danger-text"
-                    title="Elimină"
-                    onClick={() => removeAt(index)}
-                  >
-                    ✕
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="muted gallery-empty">Nicio imagine încă.</p>
-        )}
-      </fieldset>
-
-      <fieldset className="fieldset">
-        <legend>Prețuri găsite online (opțional)</legend>
-        <p className="hint">
-          Adaugă fiecare preț văzut pe magazine / comparatoare.{' '}
-          <strong>Preț propus</strong> = media aritmetică a observațiilor valide.
-        </p>
-        <div className="summary-cards summary-cards--inline">
-          <div className="summary-cards__item summary-cards__item--accent">
-            <span className="muted">Preț propus (medie)</span>
-            <strong>
-              {proposedAvg === null ? '—' : proposedAvg.toFixed(2)}
-            </strong>
-          </div>
-          <div className="summary-cards__item">
-            <span className="muted">Observații</span>
-            <strong>{obsDraft.filter((o) => Number.isFinite(o.price)).length}</strong>
-          </div>
-        </div>
-        <button
-          type="button"
-          className="btn secondary market-add-btn"
-          onClick={addMarketObservation}
-        >
-          + Adaugă observație (preț + link)
-        </button>
-        {obsDraft.length > 0 ? (
-          <ul className="market-obs-list">
-            {obsDraft.map((row, index) => (
-              <li key={index} className="market-obs-row">
-                <div className="field-row market-obs-grid">
-                  <label className="field">
-                    <span>Preț (RON)</span>
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      step="any"
-                      min={0}
-                      value={Number.isFinite(row.price) ? row.price : ''}
-                      onChange={(e) => {
-                        const n = parseFloat(e.target.value.replace(',', '.'))
-                        updateMarketObservation(index, {
-                          price: e.target.value === '' || Number.isNaN(n) ? 0 : n,
-                        })
-                      }}
-                    />
-                  </label>
-                  <label className="field">
-                    <span>Link sursă</span>
-                    <input
-                      type="url"
-                      placeholder="https://..."
-                      value={row.sourceUrl ?? ''}
-                      onChange={(e) =>
-                        updateMarketObservation(index, {
-                          sourceUrl: e.target.value,
-                        })
-                      }
-                    />
-                  </label>
-                </div>
-                <div className="field-row market-obs-grid">
-                  <label className="field">
-                    <span>Data</span>
-                    <input
-                      type="date"
-                      value={row.observedAt ?? ''}
-                      onChange={(e) =>
-                        updateMarketObservation(index, {
-                          observedAt: e.target.value,
-                        })
-                      }
-                    />
-                  </label>
-                  <label className="field">
-                    <span>Notă</span>
-                    <input
-                      type="text"
-                      placeholder="ex. magazin"
-                      value={row.note ?? ''}
-                      onChange={(e) =>
-                        updateMarketObservation(index, {
-                          note: e.target.value,
-                        })
-                      }
-                    />
-                  </label>
-                </div>
+              <div
+                key={`${index}-${url.slice(0, 48)}`}
+                className={`gallery-v2__item${dragIndex === index ? ' gallery-v2__item--dragging' : ''}`}
+                draggable
+                onDragStart={(e) => {
+                  const target = e.target as HTMLElement | null
+                  if (target?.closest('.gallery-v2__remove')) {
+                    e.preventDefault()
+                    return
+                  }
+                  setDragIndex(index)
+                  e.dataTransfer.effectAllowed = 'move'
+                }}
+                onDragEnd={() => setDragIndex(null)}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  e.dataTransfer.dropEffect = 'move'
+                }}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  if (dragIndex !== null && dragIndex !== index) {
+                    setDraft((d) => {
+                      const arr = [...d.imageUrls]
+                      const [moved] = arr.splice(dragIndex, 1)
+                      arr.splice(index, 0, moved)
+                      return { ...d, imageUrls: arr }
+                    })
+                  }
+                  setDragIndex(null)
+                }}
+              >
+                <ProductImage
+                  src={url}
+                  alt=""
+                  loading="eager"
+                  placeholderClassName="gallery-v2__placeholder"
+                />
+                {index === 0 && (
+                  <span className="gallery-v2__badge">1</span>
+                )}
                 <button
                   type="button"
-                  className="btn secondary market-remove-btn"
-                  onClick={() => removeMarketObservation(index)}
+                  className="gallery-v2__remove"
+                  title="Elimină"
+                  aria-label={`Elimină imaginea ${index + 1}`}
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    removeAt(index)
+                  }}
                 >
-                  Elimină observația
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
                 </button>
-              </li>
+                <span className="gallery-v2__drag-hint">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <circle cx="9" cy="5" r="1.5" />
+                    <circle cx="15" cy="5" r="1.5" />
+                    <circle cx="9" cy="12" r="1.5" />
+                    <circle cx="15" cy="12" r="1.5" />
+                    <circle cx="9" cy="19" r="1.5" />
+                    <circle cx="15" cy="19" r="1.5" />
+                  </svg>
+                </span>
+              </div>
             ))}
-          </ul>
+            {slotsLeft > 0 && (
+              <button
+                type="button"
+                className="gallery-v2__add"
+                disabled={imageBusy}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                <span>{imageBusy ? '…' : 'Adaugă'}</span>
+              </button>
+            )}
+          </div>
         ) : (
-          <p className="muted gallery-empty">Nicio observație încă.</p>
+          <button
+            type="button"
+            className="gallery-v2__empty"
+            disabled={imageBusy}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <path d="M21 15l-5-5L5 21" />
+            </svg>
+            <span>{imageBusy ? 'Se încarcă…' : 'Încarcă imagini'}</span>
+            <span className="muted">Click pentru a selecta fișiere</span>
+          </button>
         )}
       </fieldset>
-
-      <label className="field">
-        <span>Notițe</span>
-        <textarea
-          rows={3}
-          value={draft.notes}
-          onChange={(e) =>
-            setDraft((d) => ({ ...d, notes: e.target.value }))
-          }
-        />
-      </label>
 
       <div className="form-actions">
         <button type="submit" className="btn primary">

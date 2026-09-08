@@ -1,8 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+
+export type ShopToastAction = {
+  label: string
+  to: string
+}
 
 type ShopToastProps = {
   message: string | null
   title?: string | null
+  action?: ShopToastAction | null
   onDismiss: () => void
   durationMs?: number
 }
@@ -10,10 +17,12 @@ type ShopToastProps = {
 export function ShopToast({
   message,
   title = 'Date incomplete',
+  action = null,
   onDismiss,
-  durationMs = 4500,
+  durationMs,
 }: ShopToastProps) {
   const [visible, setVisible] = useState(false)
+  const timeoutMs = durationMs ?? (action ? 7000 : 4500)
 
   useEffect(() => {
     if (!message) {
@@ -25,16 +34,16 @@ export function ShopToast({
     const timer = window.setTimeout(() => {
       setVisible(false)
       window.setTimeout(onDismiss, 220)
-    }, durationMs)
+    }, timeoutMs)
 
     return () => window.clearTimeout(timer)
-  }, [durationMs, message, onDismiss])
+  }, [timeoutMs, message, onDismiss, action])
 
   if (!message) return null
 
   return (
     <div
-      className={`shop-toast${visible ? ' shop-toast--visible' : ''}`}
+      className={`shop-toast${visible ? ' shop-toast--visible' : ''}${action ? ' shop-toast--with-action' : ''}`}
       role="status"
       aria-live="polite"
     >
@@ -44,6 +53,18 @@ export function ShopToast({
       <div className="shop-toast__content">
         <p className="shop-toast__title">{title}</p>
         <p className="shop-toast__message">{message}</p>
+        {action ? (
+          <Link
+            to={action.to}
+            className="shop-toast__action"
+            onClick={() => {
+              setVisible(false)
+              window.setTimeout(onDismiss, 220)
+            }}
+          >
+            {action.label}
+          </Link>
+        ) : null}
       </div>
       <button
         type="button"
@@ -63,17 +84,32 @@ export function ShopToast({
 export function useShopToast() {
   const [message, setMessage] = useState<string | null>(null)
   const [title, setTitle] = useState<string | null>(null)
+  const [action, setAction] = useState<ShopToastAction | null>(null)
+
+  const dismissToast = useCallback(() => {
+    setMessage(null)
+    setTitle(null)
+    setAction(null)
+  }, [])
+
+  const showToast = useCallback(
+    (
+      nextMessage: string,
+      nextTitle = 'Date incomplete',
+      nextAction?: ShopToastAction | null,
+    ) => {
+      setTitle(nextTitle)
+      setAction(nextAction ?? null)
+      setMessage(nextMessage)
+    },
+    [],
+  )
 
   return {
     message,
     title,
-    showToast: (nextMessage: string, nextTitle = 'Date incomplete') => {
-      setTitle(nextTitle)
-      setMessage(nextMessage)
-    },
-    dismissToast: () => {
-      setMessage(null)
-      setTitle(null)
-    },
+    action,
+    showToast,
+    dismissToast,
   }
 }
