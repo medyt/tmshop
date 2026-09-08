@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { AdminLayout } from '../components/admin/AdminLayout'
 import { ConfirmModal } from '../components/admin/ConfirmModal'
 import { OrdersTable } from '../components/admin/OrdersTable'
@@ -777,6 +777,9 @@ export function AdminOrdersPage({ onStockChanged }: Props) {
             >
               {loading ? 'Se reîncarcă…' : 'Reîncarcă'}
             </button>
+            <Link to="/admin/comenzi/import" className="btn secondary">
+              Importă din Excel
+            </Link>
             <button
               type="button"
               className="btn primary"

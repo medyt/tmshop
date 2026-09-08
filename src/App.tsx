@@ -17,6 +17,8 @@ import { CartPage } from './pages/CartPage'
 import { CheckoutPage } from './pages/CheckoutPage'
 import { GestiunePage } from './pages/GestiunePage'
 import { ProductEditorPage } from './pages/admin/ProductEditorPage'
+import { AdminCustomersPage } from './pages/AdminCustomersPage'
+import { AdminOrderImportPage } from './pages/AdminOrderImportPage'
 import { LoginPage } from './pages/LoginPage'
 import { CustomerOrdersPage } from './pages/CustomerOrdersPage'
 import { OrderSuccessPage } from './pages/OrderSuccessPage'
@@ -133,6 +135,22 @@ function AppRoutes() {
             element={
               <AdminRoute>
                 <AdminOrdersPage onStockChanged={productApi.reloadProducts} />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/comenzi/import"
+            element={
+              <AdminRoute>
+                <AdminOrderImportPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/clienti"
+            element={
+              <AdminRoute>
+                <AdminCustomersPage />
               </AdminRoute>
             }
           />

@@ -3230,7 +3230,9 @@ if ($method === 'POST') {
     }
 
     $order['accessToken'] = $accessToken;
-    if ($paymentMethod !== 'card') {
+    // Import în masă din admin: emailul de confirmare poate fi oprit (suppressEmail).
+    $suppressEmail = shoptop_is_admin_user() && ($body['suppressEmail'] ?? false) === true;
+    if ($paymentMethod !== 'card' && !$suppressEmail) {
         shoptop_send_order_confirmation($order);
     }
     if ($customerEmail !== '') {

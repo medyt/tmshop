@@ -37,6 +37,14 @@ const ICONS = {
       <path d="M9 7a3 3 0 0 1 6 0" />
     </svg>
   ),
+  customers: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M2.5 20a6.5 6.5 0 0 1 13 0" />
+      <circle cx="17" cy="9" r="2.5" />
+      <path d="M15.5 14.5a5 5 0 0 1 6 4.5" />
+    </svg>
+  ),
   products: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M4 8l8-4 8 4-8 4z" />
@@ -93,6 +101,7 @@ const ICONS = {
 const NAV_MAIN: NavItem[] = [
   { to: '/admin', label: 'Panou', icon: ICONS.home, end: true },
   { to: '/admin/comenzi', label: 'Comenzi', icon: ICONS.orders },
+  { to: '/admin/clienti', label: 'Clienți', icon: ICONS.customers },
   {
     to: '/admin/gestiune',
     label: 'Produse',

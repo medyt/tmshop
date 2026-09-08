@@ -167,6 +167,8 @@ export type CheckoutPayload = {
   /** Obligatoriu true — verificat și pe server. */
   acceptedTerms: boolean
   items: Array<{ productId: string; quantity: number }>
+  /** Doar admin (import în masă): nu trimite email de confirmare clientului. */
+  suppressEmail?: boolean
   /** Click IDs Meta pentru Conversions API. */
   meta?: {
     fbp?: string

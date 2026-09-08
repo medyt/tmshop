@@ -1,0 +1,299 @@
+/* Import comenzi din Excel. Prefix `oi-`. */
+
+.oi {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.oi-card {
+  padding: 1rem 1.1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.oi-card--sticky {
+  position: sticky;
+  bottom: 0.75rem;
+  z-index: 20;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.14);
+}
+
+.oi-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.oi-step {
+  flex-shrink: 0;
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+
+.oi-card__title {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.oi-card__lead {
+  margin: 0.2rem 0 0;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.oi-drop {
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.oi-drop--active {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.oi-drop__btn {
+  width: 100%;
+  min-height: 9rem;
+  border: 0;
+  background: transparent;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 1.25rem;
+  font: inherit;
+  color: var(--text-h);
+  cursor: pointer;
+}
+
+.oi-drop__btn svg {
+  color: var(--accent);
+}
+
+.oi-drop__btn:hover {
+  background: var(--table-head-bg);
+}
+
+.oi-note {
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  background: var(--table-head-bg);
+  border: 1px solid var(--border);
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.oi-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.oi-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--table-head-bg);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.oi-pill--ok {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.oi-pill--warn {
+  background: #fff7ed;
+  border-color: #fdba74;
+  color: #9a3412;
+}
+
+.oi-pill--error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.oi-table td {
+  vertical-align: top;
+  font-size: 0.86rem;
+}
+
+.oi-row--error {
+  background: #fff7f7;
+}
+
+.oi-row--warn {
+  background: #fffdf5;
+}
+
+.oi-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: nowrap;
+}
+
+.oi-status {
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--table-head-bg);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.oi-status:disabled {
+  cursor: default;
+}
+
+.oi-status--ok {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.oi-status--warn {
+  background: #fff7ed;
+  border-color: #fdba74;
+  color: #9a3412;
+}
+
+.oi-status--error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.oi-messages {
+  margin: 0.35rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.76rem;
+  max-width: 18rem;
+}
+
+.oi-messages__error {
+  color: #b91c1c;
+}
+
+.oi-messages__warn {
+  color: #9a3412;
+}
+
+.oi-main {
+  display: block;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.oi-sub {
+  display: block;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.oi-sub--ok {
+  color: var(--accent);
+}
+
+.oi-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.oi-items strong {
+  color: var(--accent);
+}
+
+.oi-items code {
+  margin-left: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.oi-items__missing {
+  color: #b91c1c;
+}
+
+.oi-items__addons {
+  font-size: 0.76rem;
+  color: #4338ca;
+}
+
+.oi-result {
+  display: inline-block;
+  font-size: 0.8rem;
+  max-width: 16rem;
+}
+
+.oi-result--ok {
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.oi-result--ok:hover {
+  text-decoration: underline;
+}
+
+.oi-result--error {
+  color: #b91c1c;
+}
+
+.oi-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.5rem;
+}
+
+.oi-check {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.88rem;
+  color: var(--text-h);
+}
+
+.oi-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.oi-progress {
+  flex: 1 1 200px;
+  height: 0.6rem;
+  accent-color: var(--accent);
+}
