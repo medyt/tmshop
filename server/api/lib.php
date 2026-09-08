@@ -1081,13 +1081,14 @@ function shoptop_normalize_product(mixed $input): array
         ? null
         : json_encode($bundleOffers, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
+    // Slug-ul NU se mai derivă din nume aici: la INSERT se fixează o singură
+    // dată (shoptop_insert_product), la UPDATE se păstrează cel existent dacă
+    // clientul nu trimite altul (shoptop_update_product). Altfel, orice
+    // modificare de titlu ar schimba adresa și ar rupe linkurile din reclame.
     $slug = null;
     if (isset($input['slug']) && is_string($input['slug'])) {
         $trimmed = trim($input['slug']);
         $slug = $trimmed !== '' ? shoptop_slugify($trimmed) : null;
-    }
-    if ($slug === null) {
-        $slug = shoptop_slugify(trim($name));
     }
 
     $category = null;
@@ -1160,8 +1161,117 @@ function shoptop_products_has_bundle_offers(PDO $pdo): bool
     return $cached;
 }
 
+/** Tabelul de istoric slug există? (migrate-product-slug-history.sql) */
+function shoptop_slug_history_available(PDO $pdo): bool
+{
+    static $cached = null;
+    if ($cached !== null) {
+        return $cached;
+    }
+    $stmt = $pdo->prepare(
+        'SELECT 1
+         FROM information_schema.TABLES
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = \'product_slug_history\'
+         LIMIT 1'
+    );
+    $stmt->execute();
+    $cached = (bool) $stmt->fetchColumn();
+    return $cached;
+}
+
+/** Slug-ul curent efectiv al unui rând (cel salvat sau derivat din nume). */
+function shoptop_product_row_slug(array $row): string
+{
+    $slug = trim((string) ($row['slug'] ?? ''));
+    if ($slug !== '') {
+        return $slug;
+    }
+    return shoptop_slugify((string) ($row['name'] ?? $row['id'] ?? 'produs'));
+}
+
+/**
+ * Slug liber pentru produsul $productId: dacă $slug e folosit de alt produs,
+ * adaugă sufix numeric (-2, -3, …), ca la Shopify.
+ */
+function shoptop_unique_product_slug(PDO $pdo, string $slug, string $productId): string
+{
+    $base = $slug !== '' ? $slug : 'produs';
+    $stmt = $pdo->prepare('SELECT id FROM products WHERE slug = :slug LIMIT 1');
+    $candidate = $base;
+    for ($i = 2; $i < 1000; $i++) {
+        $stmt->execute(['slug' => $candidate]);
+        $owner = $stmt->fetchColumn();
+        if ($owner === false || (string) $owner === $productId) {
+            return $candidate;
+        }
+        $candidate = $base . '-' . $i;
+    }
+    return $base . '-' . bin2hex(random_bytes(3));
+}
+
+/**
+ * Înregistrează schimbarea de adresă: slug-ul vechi rămâne valid și
+ * redirecționează către produs. Slug-ul nou (devenit curent) e scos din istoric.
+ */
+function shoptop_record_slug_change(PDO $pdo, string $productId, string $oldSlug, string $newSlug): void
+{
+    if (!shoptop_slug_history_available($pdo)) {
+        return;
+    }
+    $del = $pdo->prepare('DELETE FROM product_slug_history WHERE slug = :slug');
+    $del->execute(['slug' => $newSlug]);
+    if ($oldSlug === '' || $oldSlug === $newSlug) {
+        return;
+    }
+    $ins = $pdo->prepare(
+        'INSERT INTO product_slug_history (slug, product_id) VALUES (:slug, :pid)
+         ON DUPLICATE KEY UPDATE product_id = VALUES(product_id)'
+    );
+    $ins->execute(['slug' => $oldSlug, 'pid' => $productId]);
+}
+
+/** @return list<string> adresele vechi ale produsului (cele mai noi primele) */
+function shoptop_product_previous_slugs(PDO $pdo, string $productId): array
+{
+    if (!shoptop_slug_history_available($pdo)) {
+        return [];
+    }
+    $stmt = $pdo->prepare(
+        'SELECT slug FROM product_slug_history WHERE product_id = :pid ORDER BY created_at DESC'
+    );
+    $stmt->execute(['pid' => $productId]);
+    $out = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $slug) {
+        $out[] = (string) $slug;
+    }
+    return $out;
+}
+
+/** Id-ul produsului care a avut cândva acest slug (după redenumire). */
+function shoptop_product_id_for_previous_slug(PDO $pdo, string $slug): ?string
+{
+    $slug = trim($slug);
+    if ($slug === '' || !shoptop_slug_history_available($pdo)) {
+        return null;
+    }
+    $stmt = $pdo->prepare('SELECT product_id FROM product_slug_history WHERE slug = :slug LIMIT 1');
+    $stmt->execute(['slug' => $slug]);
+    $id = $stmt->fetchColumn();
+    return $id === false ? null : (string) $id;
+}
+
 function shoptop_insert_product(PDO $pdo, array $product): void
 {
+    // Adresa se fixează o singură dată, la creare; unică între produse.
+    $wanted = $product['slug'] ?? null;
+    if (!is_string($wanted) || trim($wanted) === '') {
+        $wanted = shoptop_slugify((string) $product['name']);
+    }
+    $product['slug'] = shoptop_unique_product_slug($pdo, $wanted, (string) $product['id']);
+    // Dacă adresa era în istoricul altui produs, acum e a produsului nou.
+    shoptop_record_slug_change($pdo, (string) $product['id'], '', $product['slug']);
+
     $hasBundle = shoptop_products_has_bundle_offers($pdo);
     if (!$hasBundle) {
         unset($product['bundle_offers']);
@@ -1184,10 +1294,28 @@ function shoptop_insert_product(PDO $pdo, array $product): void
 
 function shoptop_update_product(PDO $pdo, array $product): int
 {
-    $exists = $pdo->prepare('SELECT 1 FROM products WHERE id = :id LIMIT 1');
+    $exists = $pdo->prepare('SELECT id, name, slug FROM products WHERE id = :id LIMIT 1');
     $exists->execute(['id' => $product['id']]);
-    if (!$exists->fetchColumn()) {
+    $existing = $exists->fetch();
+    if (!$existing) {
         return 0;
+    }
+
+    // Adresa curentă (salvată sau, la produsele vechi, derivată din numele de
+    // dinainte de modificare) rămâne dacă clientul nu trimite alta.
+    $oldSlug = shoptop_product_row_slug($existing);
+    $wanted = $product['slug'] ?? null;
+    if (!is_string($wanted) || trim($wanted) === '') {
+        $wanted = $oldSlug;
+    }
+    $conflict = $pdo->prepare('SELECT id FROM products WHERE slug = :slug AND id <> :id LIMIT 1');
+    $conflict->execute(['slug' => $wanted, 'id' => $product['id']]);
+    if ($conflict->fetchColumn()) {
+        shoptop_json_error('Adresa URL „' . $wanted . '” este folosită deja de alt produs.', 409);
+    }
+    $product['slug'] = $wanted;
+    if ($wanted !== $oldSlug) {
+        shoptop_record_slug_change($pdo, (string) $product['id'], $oldSlug, $wanted);
     }
 
     $hasBundle = shoptop_products_has_bundle_offers($pdo);

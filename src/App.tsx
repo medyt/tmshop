@@ -16,6 +16,7 @@ import { ReturnRequestPage } from './pages/shop/ReturnRequestPage'
 import { CartPage } from './pages/CartPage'
 import { CheckoutPage } from './pages/CheckoutPage'
 import { GestiunePage } from './pages/GestiunePage'
+import { ProductEditorPage } from './pages/admin/ProductEditorPage'
 import { LoginPage } from './pages/LoginPage'
 import { CustomerOrdersPage } from './pages/CustomerOrdersPage'
 import { OrderSuccessPage } from './pages/OrderSuccessPage'
@@ -94,7 +95,36 @@ function AppRoutes() {
             path="/admin/gestiune"
             element={
               <AdminRoute>
-                <GestiunePage {...productApi} />
+                <GestiunePage
+                  products={productApi.products}
+                  replaceAll={productApi.replaceAll}
+                  reloadProducts={productApi.reloadProducts}
+                  deleteProduct={productApi.deleteProduct}
+                />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/produse/nou"
+            element={
+              <AdminRoute>
+                <ProductEditorPage
+                  products={productApi.products}
+                  saveProduct={productApi.saveProduct}
+                  deleteProduct={productApi.deleteProduct}
+                />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/produse/:productId"
+            element={
+              <AdminRoute>
+                <ProductEditorPage
+                  products={productApi.products}
+                  saveProduct={productApi.saveProduct}
+                  deleteProduct={productApi.deleteProduct}
+                />
               </AdminRoute>
             }
           />

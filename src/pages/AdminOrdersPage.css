@@ -1,0 +1,352 @@
+/* =====================================================================
+   Comenzi admin: panou de filtre delimitat pe secțiuni, produse cu
+   miniatură, AWB cu status. Prefix `ao-`.
+   ===================================================================== */
+
+.ao-filters {
+  display: flex;
+  flex-direction: column;
+  background: var(--table-head-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.ao-filter {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.ao-filter:last-child {
+  border-bottom: 0;
+}
+
+.ao-filter__label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.ao-filter__body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .ao-filter {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.35rem;
+  }
+}
+
+/* Segmented control (pastile) */
+.ao-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding: 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-bg);
+}
+
+.ao-seg__btn {
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  padding: 0.38rem 0.75rem;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: background 0.12s, color 0.12s;
+}
+
+.ao-seg__btn:hover {
+  color: var(--text-h);
+  background: var(--table-head-bg);
+}
+
+.ao-seg__btn--active {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.ao-seg__btn--danger.ao-seg__btn--active {
+  background: #fef2f2;
+  border-color: rgba(220, 38, 38, 0.4);
+  color: #b91c1c;
+}
+
+.ao-seg__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: var(--table-head-bg);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.ao-seg__btn--active .ao-seg__count {
+  background: var(--accent);
+  color: #fff;
+}
+
+.ao-seg__btn--danger.ao-seg__btn--active .ao-seg__count {
+  background: #b91c1c;
+}
+
+/* Perioadă */
+.ao-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.ao-range input[type='date'] {
+  font: inherit;
+  font-size: 0.86rem;
+  padding: 0.38rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  color: var(--text-h);
+}
+
+.ao-range input[type='date']:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+.ao-range__sep {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.ao-filter__summary {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.ao-link-btn {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.ao-link-btn:hover {
+  text-decoration: underline;
+}
+
+/* ---------- Produse comandate: miniatură + titlu ---------- */
+/* Coloana Client / Produs primește cel mai mult spațiu din tabel. */
+.data-table--orders .order-cell-customer {
+  min-width: 16rem;
+}
+
+.data-table--orders .ao-awb__number {
+  white-space: normal;
+}
+
+.ao-items {
+  list-style: none;
+  margin: 0.45rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  max-width: 26rem;
+}
+
+.ao-item {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.45rem 0.3rem 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--table-head-bg);
+}
+
+.ao-item__thumb {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.ao-item__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.ao-item__thumb-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6rem;
+  color: var(--muted);
+}
+
+.ao-item__name {
+  min-width: 0;
+  font-size: 0.82rem;
+  line-height: 1.3;
+  color: var(--text-h);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.ao-item__qty {
+  font-weight: 700;
+  color: var(--accent);
+  margin-right: 0.25rem;
+}
+
+.ao-item__price {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- AWB ---------- */
+.ao-awb {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 9rem;
+}
+
+.ao-awb__number {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--text-h);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.ao-awb__carrier {
+  margin-left: 0.4rem;
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+
+.ao-awb__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  align-self: flex-start;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--table-head-bg);
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.ao-awb__status::before {
+  content: '';
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: #9ca3af;
+}
+
+.ao-awb__status--info {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.ao-awb__status--info::before {
+  background: #3b82f6;
+}
+
+.ao-awb__status--ok {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.ao-awb__status--ok::before {
+  background: var(--accent);
+}
+
+.ao-awb__status--warn {
+  background: #fff7ed;
+  border-color: #fdba74;
+  color: #9a3412;
+}
+
+.ao-awb__status--warn::before {
+  background: #f97316;
+}
+
+.ao-awb__status--bad {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.ao-awb__status--bad::before {
+  background: #dc2626;
+}
+
+.ao-awb__detail {
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.3;
+}
+
+.ao-awb__none {
+  color: var(--muted);
+  font-size: 0.82rem;
+}

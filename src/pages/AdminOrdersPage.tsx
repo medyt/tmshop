@@ -18,9 +18,10 @@ import {
   isOrdersApiEnabled,
   openAwbPdfBlob,
 } from '../lib/ordersApi'
-import { toLocalDateKey } from '../lib/adminStats'
+import { addLocalDays, toLocalDateKey } from '../lib/adminStats'
 import type { DeliveryCarrierId } from '../lib/shippingCarriers'
 import type { Order, OrderStatus, PaymentMethod } from '../types/order'
+import './AdminOrdersPage.css'
 
 type Props = {
   onStockChanged?: () => void
@@ -91,20 +92,59 @@ const PAYMENT_TABS: Array<{ id: PaymentFilter; label: string }> = [
   { id: 'cod', label: 'Ramburs' },
 ]
 
-const CARRIER_TABS: Array<{ id: DeliveryCarrierId; label: string }> = [
+type CarrierFilter = 'all' | DeliveryCarrierId
+
+const CARRIER_TABS: Array<{ id: CarrierFilter; label: string }> = [
+  { id: 'all', label: 'Toți curierii' },
   { id: 'fan-courier', label: 'Fan Courier' },
   { id: 'dpd', label: 'DPD' },
 ]
+
+function isCarrierFilter(value: string): value is CarrierFilter {
+  return value === 'all' || value === 'fan-courier' || value === 'dpd'
+}
 
 function orderPayment(order: Order): PaymentMethod {
   return order.paymentMethod === 'card' ? 'card' : 'cod'
 }
 
 /** Comenzi fără AWB apar pe ambele taburi; după AWB doar pe curierul salvat (legacy = DPD). */
-function orderMatchesCarrier(order: Order, carrier: DeliveryCarrierId): boolean {
+function orderMatchesCarrier(order: Order, carrier: CarrierFilter): boolean {
+  if (carrier === 'all') return true
   if (!order.awbNumber) return true
   const locked = order.deliveryCarrier ?? 'dpd'
   return locked === carrier
+}
+
+type DateRange = { from: string; to: string }
+
+const EMPTY_RANGE: DateRange = { from: '', to: '' }
+
+type RangePreset = 'today' | 'yesterday' | '7d' | '30d'
+
+function presetRange(preset: RangePreset): DateRange {
+  const today = new Date()
+  const todayKey = toLocalDateKey(today)
+  switch (preset) {
+    case 'today':
+      return { from: todayKey, to: todayKey }
+    case 'yesterday': {
+      const y = toLocalDateKey(addLocalDays(today, -1))
+      return { from: y, to: y }
+    }
+    case '7d':
+      return { from: toLocalDateKey(addLocalDays(today, -6)), to: todayKey }
+    case '30d':
+      return { from: toLocalDateKey(addLocalDays(today, -29)), to: todayKey }
+  }
+}
+
+function sameRange(a: DateRange, b: DateRange): boolean {
+  return a.from === b.from && a.to === b.to
+}
+
+function rangeIsEmpty(range: DateRange): boolean {
+  return !range.from && !range.to
 }
 
 function formatBulkErrors(
@@ -154,8 +194,14 @@ function orderCreatedDateKey(order: Order): string | null {
   return toLocalDateKey(created)
 }
 
-function orderMatchesDate(order: Order, dateKey: string): boolean {
-  return orderCreatedDateKey(order) === dateKey
+/** Interval inclusiv pe cheia de zi locală; capetele goale = nelimitat. */
+function orderMatchesRange(order: Order, range: DateRange): boolean {
+  if (rangeIsEmpty(range)) return true
+  const key = orderCreatedDateKey(order)
+  if (!key) return false
+  if (range.from && key < range.from) return false
+  if (range.to && key > range.to) return false
+  return true
 }
 
 function formatDateLabel(dateKey: string): string {
@@ -168,6 +214,28 @@ function formatDateLabel(dateKey: string): string {
   })
 }
 
+function formatRangeLabel(range: DateRange): string {
+  if (range.from && range.to) {
+    return range.from === range.to
+      ? formatDateLabel(range.from)
+      : `${formatDateLabel(range.from)} – ${formatDateLabel(range.to)}`
+  }
+  if (range.from) return `de la ${formatDateLabel(range.from)}`
+  if (range.to) return `până la ${formatDateLabel(range.to)}`
+  return 'toate zilele'
+}
+
+function rangeFromParams(params: URLSearchParams): DateRange {
+  const single = (params.get('date') ?? '').trim()
+  if (isDateKey(single)) return { from: single, to: single }
+  const from = (params.get('from') ?? '').trim()
+  const to = (params.get('to') ?? '').trim()
+  return {
+    from: isDateKey(from) ? from : '',
+    to: isDateKey(to) ? to : '',
+  }
+}
+
 function isOrderStatusFilter(value: string): value is OrderStatusFilter {
   return ORDER_STATUS_TABS.some((tab) => tab.id === value)
 }
@@ -176,7 +244,6 @@ export function AdminOrdersPage({ onStockChanged }: Props) {
   const [searchParams, setSearchParams] = useSearchParams()
   const queryFromUrl = (searchParams.get('q') ?? '').trim()
   const tabFromUrl = (searchParams.get('tab') ?? '').trim()
-  const dateFromUrl = (searchParams.get('date') ?? '').trim()
   const carrierFromUrl = (searchParams.get('carrier') ?? '').trim()
 
   const { products, loading: productsLoading } = useProducts()
@@ -185,12 +252,12 @@ export function AdminOrdersPage({ onStockChanged }: Props) {
     if (isOrderStatusFilter(tabFromUrl)) return tabFromUrl
     return queryFromUrl ? 'all' : 'waiting'
   })
-  const [carrierFilter, setCarrierFilter] = useState<DeliveryCarrierId>(() =>
-    carrierFromUrl === 'dpd' ? 'dpd' : 'fan-courier',
+  const [carrierFilter, setCarrierFilter] = useState<CarrierFilter>(() =>
+    isCarrierFilter(carrierFromUrl) ? carrierFromUrl : 'fan-courier',
   )
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('all')
-  const [dateFilter, setDateFilter] = useState(() =>
-    isDateKey(dateFromUrl) ? dateFromUrl : '',
+  const [dateRange, setDateRange] = useState<DateRange>(() =>
+    rangeFromParams(searchParams),
   )
   const [orderSearch, setOrderSearch] = useState(queryFromUrl)
   const [loading, setLoading] = useState(isOrdersApiEnabled())
@@ -243,11 +310,10 @@ export function AdminOrdersPage({ onStockChanged }: Props) {
   useEffect(() => {
     const q = (searchParams.get('q') ?? '').trim()
     const tab = (searchParams.get('tab') ?? '').trim()
-    const date = (searchParams.get('date') ?? '').trim()
     const carrier = (searchParams.get('carrier') ?? '').trim()
     setOrderSearch(q)
-    setDateFilter(isDateKey(date) ? date : '')
-    if (carrier === 'fan-courier' || carrier === 'dpd') {
+    setDateRange(rangeFromParams(searchParams))
+    if (isCarrierFilter(carrier)) {
       setCarrierFilter(carrier)
     }
     if (isOrderStatusFilter(tab)) {
@@ -267,9 +333,9 @@ export function AdminOrdersPage({ onStockChanged }: Props) {
   const selectedOrder = orders.find((o) => o.id === selectedId) ?? null
 
   const ordersByDate = useMemo(() => {
-    if (!dateFilter) return orders
-    return orders.filter((order) => orderMatchesDate(order, dateFilter))
-  }, [orders, dateFilter])
+    if (rangeIsEmpty(dateRange)) return orders
+    return orders.filter((order) => orderMatchesRange(order, dateRange))
+  }, [orders, dateRange])
 
   const ordersByCarrier = useMemo(
     () =>
@@ -333,7 +399,8 @@ export function AdminOrdersPage({ onStockChanged }: Props) {
         orderMatchesFilter(order, statusFilter) &&
         orderMatchesPayment(order, paymentFilter),
     )
-    const counts: Record<DeliveryCarrierId, number> = {
+    const counts: Record<CarrierFilter, number> = {
+      all: scoped.length,
       dpd: 0,
       'fan-courier': 0,
     }
@@ -359,7 +426,9 @@ export function AdminOrdersPage({ onStockChanged }: Props) {
   const activePaymentLabel =
     PAYMENT_TABS.find((t) => t.id === paymentFilter)?.label ?? 'Toate'
   const activeCarrierLabel =
-    CARRIER_TABS.find((t) => t.id === carrierFilter)?.label ?? 'DPD'
+    carrierFilter === 'all'
+      ? 'curier'
+      : (CARRIER_TABS.find((t) => t.id === carrierFilter)?.label ?? 'DPD')
 
   const setFilter = (next: OrderStatusFilter) => {
     setStatusFilter(next)
@@ -373,7 +442,7 @@ export function AdminOrdersPage({ onStockChanged }: Props) {
     setSelectedId(null)
   }
 
-  const setCarrier = (next: DeliveryCarrierId) => {
+  const setCarrier = (next: CarrierFilter) => {
     setCarrierFilter(next)
     setCheckedIds([])
     setSelectedId(null)
@@ -382,16 +451,41 @@ export function AdminOrdersPage({ onStockChanged }: Props) {
     setSearchParams(params, { replace: true })
   }
 
-  const updateDateFilter = (next: string) => {
-    const normalized = isDateKey(next) ? next : ''
-    setDateFilter(normalized)
+  const updateDateRange = (next: DateRange) => {
+    const from = isDateKey(next.from) ? next.from : ''
+    const to = isDateKey(next.to) ? next.to : ''
+    // Dacă „de la” depășește „până la”, aliniem capătul celălalt.
+    const normalized: DateRange =
+      from && to && from > to ? { from, to: from } : { from, to }
+    setDateRange(normalized)
     setCheckedIds([])
     setSelectedId(null)
     const params = new URLSearchParams(searchParams)
-    if (normalized) params.set('date', normalized)
-    else params.delete('date')
+    params.delete('date')
+    if (normalized.from) params.set('from', normalized.from)
+    else params.delete('from')
+    if (normalized.to) params.set('to', normalized.to)
+    else params.delete('to')
     setSearchParams(params, { replace: true })
   }
+
+  const resetFilters = () => {
+    setStatusFilter('all')
+    setPaymentFilter('all')
+    setCarrierFilter('all')
+    setDateRange(EMPTY_RANGE)
+    setCheckedIds([])
+    setSelectedId(null)
+    const params = new URLSearchParams(searchParams)
+    for (const key of ['date', 'from', 'to', 'carrier', 'tab']) params.delete(key)
+    setSearchParams(params, { replace: true })
+  }
+
+  const filtersActive =
+    statusFilter !== 'all' ||
+    paymentFilter !== 'all' ||
+    carrierFilter !== 'all' ||
+    !rangeIsEmpty(dateRange)
 
   const mergeOrders = useCallback((updated: Order[]) => {
     if (updated.length === 0) return
@@ -530,6 +624,10 @@ export function AdminOrdersPage({ onStockChanged }: Props) {
 
   const handleBulkIssueAwb = useCallback(() => {
     if (bulkBusy || checkedIds.length === 0) return
+    if (carrierFilter === 'all') {
+      setError('Alege curierul (Fan Courier sau DPD) din filtre ca să emiți AWB.')
+      return
+    }
     const ids = [...checkedIds]
     const carrier = carrierFilter
     setBulkBusy(true)
@@ -705,112 +803,149 @@ export function AdminOrdersPage({ onStockChanged }: Props) {
       ) : (
         <section className="panel panel--list" aria-label="Comenzi">
           {!loading || orders.length > 0 ? (
-            <div className="admin-orders__filters">
-              <div className="admin-orders__date-filter">
-                <label className="field admin-orders__date" htmlFor="order-date-filter">
-                  <span>Data comenzii</span>
-                  <input
-                    id="order-date-filter"
-                    type="date"
-                    value={dateFilter}
-                    max={toLocalDateKey(new Date())}
-                    onChange={(e) => updateDateFilter(e.target.value)}
-                    aria-label="Filtru dată comandă"
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="admin-orders__date-action"
-                  onClick={() => updateDateFilter(toLocalDateKey(new Date()))}
-                >
-                  Astăzi
-                </button>
-                {dateFilter ? (
-                  <>
-                    <span className="admin-orders__date-summary muted">
-                      {ordersByDate.length}{' '}
-                      {ordersByDate.length === 1 ? 'comandă' : 'comenzi'}
-                    </span>
+            <div className="ao-filters" aria-label="Filtre comenzi">
+              <div className="ao-filter">
+                <span className="ao-filter__label">Perioadă</span>
+                <div className="ao-filter__body">
+                  <span className="ao-range">
+                    <input
+                      type="date"
+                      value={dateRange.from}
+                      max={dateRange.to || toLocalDateKey(new Date())}
+                      onChange={(e) =>
+                        updateDateRange({ ...dateRange, from: e.target.value })
+                      }
+                      aria-label="De la data"
+                    />
+                    <span className="ao-range__sep">→</span>
+                    <input
+                      type="date"
+                      value={dateRange.to}
+                      min={dateRange.from || undefined}
+                      max={toLocalDateKey(new Date())}
+                      onChange={(e) =>
+                        updateDateRange({ ...dateRange, to: e.target.value })
+                      }
+                      aria-label="Până la data"
+                    />
+                  </span>
+                  <div className="ao-seg" role="group" aria-label="Perioade rapide">
+                    {(
+                      [
+                        { id: 'today', label: 'Astăzi' },
+                        { id: 'yesterday', label: 'Ieri' },
+                        { id: '7d', label: '7 zile' },
+                        { id: '30d', label: '30 zile' },
+                      ] as Array<{ id: RangePreset; label: string }>
+                    ).map((preset) => {
+                      const active = sameRange(dateRange, presetRange(preset.id))
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          className={`ao-seg__btn${active ? ' ao-seg__btn--active' : ''}`}
+                          onClick={() => updateDateRange(presetRange(preset.id))}
+                        >
+                          {preset.label}
+                        </button>
+                      )
+                    })}
                     <button
                       type="button"
-                      className="admin-orders__date-action"
-                      onClick={() => updateDateFilter('')}
+                      className={`ao-seg__btn${rangeIsEmpty(dateRange) ? ' ao-seg__btn--active' : ''}`}
+                      onClick={() => updateDateRange(EMPTY_RANGE)}
                     >
                       Toate zilele
                     </button>
-                  </>
-                ) : null}
+                  </div>
+                  <span className="ao-filter__summary">
+                    {!rangeIsEmpty(dateRange) ? (
+                      <>
+                        {ordersByDate.length}{' '}
+                        {ordersByDate.length === 1 ? 'comandă' : 'comenzi'} ·{' '}
+                        {formatRangeLabel(dateRange)}
+                      </>
+                    ) : null}
+                    {filtersActive ? (
+                      <button type="button" className="ao-link-btn" onClick={resetFilters}>
+                        Resetează filtrele
+                      </button>
+                    ) : null}
+                  </span>
+                </div>
               </div>
-              <div
-                className="admin-orders__tabs admin-orders__tabs--carrier"
-                role="tablist"
-                aria-label="Filtru curier"
-              >
-                <span className="admin-orders__filter-label">Curier</span>
-                {CARRIER_TABS.map((tab) => {
-                  const active = carrierFilter === tab.id
-                  const count = carrierCounts[tab.id]
-                  return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      role="tab"
-                      aria-selected={active}
-                      className={`admin-orders__tab${active ? ' admin-orders__tab--active' : ''}`}
-                      onClick={() => setCarrier(tab.id)}
-                    >
-                      {tab.label}
-                      <span className="admin-orders__tab-count">({count})</span>
-                    </button>
-                  )
-                })}
+
+              <div className="ao-filter">
+                <span className="ao-filter__label">Curier</span>
+                <div className="ao-filter__body">
+                  <div className="ao-seg" role="tablist" aria-label="Filtru curier">
+                    {CARRIER_TABS.map((tab) => {
+                      const active = carrierFilter === tab.id
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          role="tab"
+                          aria-selected={active}
+                          className={`ao-seg__btn${active ? ' ao-seg__btn--active' : ''}`}
+                          onClick={() => setCarrier(tab.id)}
+                        >
+                          {tab.label}
+                          <span className="ao-seg__count">{carrierCounts[tab.id]}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
               </div>
-              <div
-                className="admin-orders__tabs"
-                role="tablist"
-                aria-label="Filtru status comenzi"
-              >
-                {ORDER_STATUS_TABS.map((tab) => {
-                  const active = statusFilter === tab.id
-                  const count = tabCounts[tab.id]
-                  return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      role="tab"
-                      aria-selected={active}
-                      className={`admin-orders__tab${active ? ' admin-orders__tab--active' : ''}`}
-                      onClick={() => setFilter(tab.id)}
-                    >
-                      {tab.label}
-                      <span className="admin-orders__tab-count">({count})</span>
-                    </button>
-                  )
-                })}
+
+              <div className="ao-filter">
+                <span className="ao-filter__label">Status</span>
+                <div className="ao-filter__body">
+                  <div className="ao-seg" role="tablist" aria-label="Filtru status comenzi">
+                    {ORDER_STATUS_TABS.map((tab) => {
+                      const active = statusFilter === tab.id
+                      const danger = tab.id === 'returned' || tab.id === 'return_received'
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          role="tab"
+                          aria-selected={active}
+                          className={`ao-seg__btn${active ? ' ao-seg__btn--active' : ''}${danger ? ' ao-seg__btn--danger' : ''}`}
+                          onClick={() => setFilter(tab.id)}
+                        >
+                          {tab.label}
+                          <span className="ao-seg__count">{tabCounts[tab.id]}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
               </div>
-              <div
-                className="admin-orders__tabs admin-orders__tabs--payment"
-                role="tablist"
-                aria-label="Filtru metodă de plată"
-              >
-                <span className="admin-orders__filter-label">Plată</span>
-                {PAYMENT_TABS.map((tab) => {
-                  const active = paymentFilter === tab.id
-                  const count = paymentCounts[tab.id]
-                  return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      role="tab"
-                      aria-selected={active}
-                      className={`admin-orders__tab${active ? ' admin-orders__tab--active' : ''}`}
-                      onClick={() => setPayFilter(tab.id)}
-                    >
-                      {tab.label}
-                      <span className="admin-orders__tab-count">({count})</span>
-                    </button>
-                  )
-                })}
+
+              <div className="ao-filter">
+                <span className="ao-filter__label">Plată</span>
+                <div className="ao-filter__body">
+                  <div className="ao-seg" role="tablist" aria-label="Filtru metodă de plată">
+                    {PAYMENT_TABS.map((tab) => {
+                      const active = paymentFilter === tab.id
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          role="tab"
+                          aria-selected={active}
+                          className={`ao-seg__btn${active ? ' ao-seg__btn--active' : ''}`}
+                          onClick={() => setPayFilter(tab.id)}
+                        >
+                          {tab.label}
+                          <span className="ao-seg__count">{paymentCounts[tab.id]}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
           ) : null}
@@ -848,16 +983,17 @@ export function AdminOrdersPage({ onStockChanged }: Props) {
               emptyMessage={
                 orders.length === 0
                   ? 'Nu există comenzi încă.'
-                  : dateFilter && ordersByDate.length === 0
-                    ? `Nicio comandă în data de ${formatDateLabel(dateFilter)}.`
-                    : paymentFilter === 'all'
-                      ? dateFilter
-                        ? `Nicio comandă ${activeCarrierLabel} în „${activeTabLabel}" pentru ${formatDateLabel(dateFilter)}.`
-                        : `Nicio comandă ${activeCarrierLabel} în „${activeTabLabel}".`
-                      : dateFilter
-                        ? `Nicio comandă ${activeCarrierLabel} cu plată ${activePaymentLabel.toLowerCase()} în „${activeTabLabel}" pentru ${formatDateLabel(dateFilter)}.`
-                        : `Nicio comandă ${activeCarrierLabel} cu plată ${activePaymentLabel.toLowerCase()} în „${activeTabLabel}".`
+                  : !rangeIsEmpty(dateRange) && ordersByDate.length === 0
+                    ? `Nicio comandă în perioada ${formatRangeLabel(dateRange)}.`
+                    : `Nicio comandă ${activeCarrierLabel}${
+                        paymentFilter === 'all'
+                          ? ''
+                          : ` cu plată ${activePaymentLabel.toLowerCase()}`
+                      } în „${activeTabLabel}"${
+                        rangeIsEmpty(dateRange) ? '' : ` (${formatRangeLabel(dateRange)})`
+                      }.`
               }
+              products={products}
               selectedId={selectedId}
               onSelect={setSelectedId}
               onCancel={handleCancel}
@@ -899,7 +1035,7 @@ export function AdminOrdersPage({ onStockChanged }: Props) {
       {selectedOrder ? (
         <OrderEditModal
           order={selectedOrder}
-          preferredCarrier={carrierFilter}
+          preferredCarrier={carrierFilter === 'all' ? 'fan-courier' : carrierFilter}
           products={products}
           productsLoading={productsLoading}
           onClose={() => setSelectedId(null)}

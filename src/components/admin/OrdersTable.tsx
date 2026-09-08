@@ -5,7 +5,11 @@ import {
   orderStatusBanner,
   paymentStatusBanner,
 } from '../../lib/ordersApi'
+import { describeAwbStatus } from '../../lib/courierStatus'
+import { primaryImageUrl } from '../../lib/productImages'
+import { ProductImage } from '../ProductImage'
 import type { Order, OrderStatus, PaymentStatus } from '../../types/order'
+import type { Product } from '../../types/product'
 
 const BULK_MAX = 50
 const PAGE_SIZE = BULK_MAX
@@ -83,6 +87,49 @@ type Props = {
   syncLabel?: string
   /** Prefill căutare (ex. din `/admin/comenzi?q=`). */
   initialSearch?: string
+  /** Catalog, pentru miniaturile produselor din comenzi. */
+  products?: Product[]
+}
+
+function formatCourierDate(value: string | undefined): string | null {
+  if (!value) return null
+  const date = new Date(value.includes('T') ? value : value.replace(' ', 'T'))
+  if (Number.isNaN(date.getTime())) return null
+  return date.toLocaleString('ro-RO', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+/** AWB în format „număr · curier” + status normalizat (ridicat / în livrare / refuzat…). */
+function AwbCell({ order }: { order: Order }) {
+  const status = describeAwbStatus(order)
+  if (!order.awbNumber || !status) {
+    return <span className="ao-awb__none">Fără AWB</span>
+  }
+  const when = formatCourierDate(order.courierStatusAt)
+  return (
+    <div className="ao-awb">
+      <span className="ao-awb__number">
+        {order.awbNumber}
+        {status.carrierLabel ? (
+          <span className="ao-awb__carrier">{status.carrierLabel}</span>
+        ) : null}
+      </span>
+      <span className={`ao-awb__status ao-awb__status--${status.tone}`}>
+        {status.label}
+      </span>
+      {status.detail || when ? (
+        <span className="ao-awb__detail">
+          {status.detail}
+          {status.detail && when ? ' · ' : ''}
+          {when}
+        </span>
+      ) : null}
+    </div>
+  )
 }
 
 function itemsCount(order: Order): number {
@@ -258,24 +305,42 @@ function canSyncDpdSelect(order: Order): boolean {
   )
 }
 
-function OrderItemsGrid({ order }: { order: Order }) {
+/** Produse comandate: miniatură mică + titlu pe două rânduri + cantitate/preț. */
+function OrderItems({
+  order,
+  imageById,
+}: {
+  order: Order
+  imageById: Map<string, string>
+}) {
   if (order.items.length === 0) return null
   return (
-    <ul className="order-items-grid" aria-label="Produse comandate">
-      {order.items.map((item, index) => (
-        <li
-          key={`${item.productId}-${index}`}
-          className="order-items-grid__row"
-        >
-          <span className="order-items-grid__qty">{item.quantity}×</span>
-          <span className="order-items-grid__name" title={item.productName}>
-            {item.productName}
-          </span>
-          <span className="order-items-grid__price">
-            {formatRon(item.lineTotal)}
-          </span>
-        </li>
-      ))}
+    <ul className="ao-items" aria-label="Produse comandate">
+      {order.items.map((item, index) => {
+        const thumb = imageById.get(item.productId)
+        return (
+          <li key={`${item.productId}-${index}`} className="ao-item">
+            <span className="ao-item__thumb">
+              {thumb ? (
+                <ProductImage
+                  src={thumb}
+                  alt=""
+                  loading="lazy"
+                  placeholderClassName="ao-item__thumb-placeholder"
+                  placeholderLabel="—"
+                />
+              ) : (
+                <span className="ao-item__thumb-placeholder">—</span>
+              )}
+            </span>
+            <span className="ao-item__name" title={item.productName}>
+              <span className="ao-item__qty">{item.quantity}×</span>
+              {item.productName}
+            </span>
+            <span className="ao-item__price">{formatRon(item.lineTotal)}</span>
+          </li>
+        )
+      })}
     </ul>
   )
 }
@@ -298,7 +363,16 @@ export function OrdersTable({
   dpdSyncing = false,
   syncLabel = 'DPD',
   initialSearch = '',
+  products = [],
 }: Props) {
+  const imageById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const product of products) {
+      const url = primaryImageUrl(product)
+      if (url) map.set(product.id, url)
+    }
+    return map
+  }, [products])
   const [sortKey, setSortKey] = useState<SortKey>(
     statusFilter === 'waiting' ? 'product' : 'date',
   )
@@ -707,7 +781,7 @@ export function OrdersTable({
                         {order.customerEmail ? (
                           <span className="cell-sku">{order.customerEmail}</span>
                         ) : null}
-                        <OrderItemsGrid order={order} />
+                        <OrderItems order={order} imageById={imageById} />
                       </td>
                       <td className="cell-nowrap">
                         <strong>{formatRon(order.totalAmount)}</strong>
@@ -723,11 +797,7 @@ export function OrdersTable({
                         />
                       </td>
                       <td>
-                        {order.awbNumber ? (
-                          <span className="cell-sku">{order.awbNumber}</span>
-                        ) : (
-                          <span className="muted">—</span>
-                        )}
+                        <AwbCell order={order} />
                       </td>
                       <td>
                         <div className="admin-reviews__row-actions">
@@ -846,7 +916,8 @@ export function OrdersTable({
                         {order.customerEmail ? (
                           <span className="muted">{order.customerEmail}</span>
                         ) : null}
-                        <OrderItemsGrid order={order} />
+                        <OrderItems order={order} imageById={imageById} />
+                        <AwbCell order={order} />
                         <span className="order-card__total">
                           {formatRon(order.totalAmount)} · {itemsCount(order)}{' '}
                           produse

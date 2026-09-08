@@ -1,79 +1,86 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ProductForm } from '../components/ProductForm'
+import { Link, useNavigate } from 'react-router-dom'
 import { AdminLayout } from '../components/admin/AdminLayout'
 import { ConfirmModal } from '../components/admin/ConfirmModal'
-import { ProductTable } from '../components/ProductTable'
+import { ProductList } from '../components/admin/ProductList'
 import { buildMetaCatalogCsv } from '../lib/metaCatalogCsv'
 import {
-  fetchProductById,
   fetchProducts,
   isProductsApiEnabled,
   syncSmartbillStock,
 } from '../lib/productsApi'
+import { fetchProductSales, type ProductSalesMap } from '../lib/productSales'
 import { SITE_LEGAL } from '../lib/siteLegal'
 import { parseProductsJson } from '../lib/validateImport'
 import type { Product } from '../types/product'
 
 type GestiunePageProps = {
   products: Product[]
-  addProduct: (p: Product) => void
-  updateProduct: (p: Product) => void
-  removeProduct: (id: string) => void
   replaceAll: (products: Product[]) => void
   reloadProducts: () => void
+  deleteProduct: (id: string) => Promise<void>
 }
 
-type FormMode =
-  | null
-  | { kind: 'new' }
-  | { kind: 'edit'; product: Product }
-
 type PendingConfirm =
-  | { kind: 'deleteProduct'; id: string; name: string }
   | { kind: 'restoreBackup'; products: Product[] }
+  | { kind: 'deleteProduct'; product: Product }
 
+/**
+ * Lista de produse. Adăugarea / editarea se fac pe pagină dedicată
+ * (/admin/produse/nou, /admin/produse/:id), nu în pop-up.
+ */
 export function GestiunePage({
   products,
-  addProduct,
-  updateProduct,
-  removeProduct,
   replaceAll,
   reloadProducts,
+  deleteProduct,
 }: GestiunePageProps) {
-  const [formMode, setFormMode] = useState<FormMode>(null)
+  const navigate = useNavigate()
   const [pending, setPending] = useState<PendingConfirm | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncNote, setSyncNote] = useState<string | null>(null)
+  const [sales, setSales] = useState<ProductSalesMap | null>(null)
+  const [salesError, setSalesError] = useState<string | null>(null)
   const importRef = useRef<HTMLInputElement>(null)
   const syncingRef = useRef(false)
 
-  const selectedId =
-    formMode?.kind === 'edit' ? formMode.product.id : null
-
-  const handleSave = useCallback(
-    (p: Product) => {
-      const exists = products.some((x) => x.id === p.id)
-      if (exists) {
-        updateProduct(p)
-      } else {
-        addProduct(p)
-      }
-      setFormMode(null)
-    },
-    [addProduct, products, updateProduct],
-  )
-
-  const handleDelete = useCallback(
-    (id: string) => {
-      const product = products.find((x) => x.id === id)
-      setPending({
-        kind: 'deleteProduct',
-        id,
-        name: product?.name ?? id,
+  // Comenzi pe produs (7/30/90 zile), agregate pe server.
+  useEffect(() => {
+    if (!isProductsApiEnabled()) {
+      return
+    }
+    let cancelled = false
+    void fetchProductSales()
+      .then((map) => {
+        if (!cancelled) setSales(map)
       })
-    },
-    [products],
-  )
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setSalesError(
+          err instanceof Error ? err.message : 'Nu am putut încărca vânzările.',
+        )
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const handleDeleteConfirmed = useCallback(async () => {
+    if (pending?.kind !== 'deleteProduct' || deleting) return
+    setDeleting(true)
+    try {
+      await deleteProduct(pending.product.id)
+      setPending(null)
+    } catch (err: unknown) {
+      setSyncNote(
+        err instanceof Error ? err.message : 'Nu am putut șterge produsul.',
+      )
+      setPending(null)
+    } finally {
+      setDeleting(false)
+    }
+  }, [deleteProduct, deleting, pending])
 
   const handleExport = useCallback(async () => {
     let payload = products
@@ -119,42 +126,6 @@ export function GestiunePage({
     a.click()
     URL.revokeObjectURL(url)
   }, [products])
-
-  const openEdit = useCallback(
-    async (id: string) => {
-      const listed = products.find((x) => x.id === id)
-      if (!listed) return
-      if (!isProductsApiEnabled()) {
-        setFormMode({ kind: 'edit', product: listed })
-        return
-      }
-      try {
-        const full = await fetchProductById(id)
-        setFormMode({ kind: 'edit', product: full })
-      } catch {
-        setFormMode({ kind: 'edit', product: listed })
-      }
-    },
-    [products],
-  )
-
-  useEffect(() => {
-    if (!formMode) return
-    const prevOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = prevOverflow
-    }
-  }, [formMode])
-
-  useEffect(() => {
-    if (!formMode || pending) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setFormMode(null)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [formMode, pending])
 
   const handleImportFile = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -238,13 +209,9 @@ export function GestiunePage({
           >
             Export catalog Meta (.csv)
           </button>
-          <button
-            type="button"
-            className="btn primary"
-            onClick={() => setFormMode({ kind: 'new' })}
-          >
+          <Link to="/admin/produse/nou" className="btn primary">
             Adaugă produs
-          </button>
+          </Link>
           <details className="backup-details">
             <summary className="backup-details__summary">
               Backup fișier (opțional)
@@ -294,53 +261,21 @@ export function GestiunePage({
             {syncNote}
           </p>
         ) : null}
-        <ProductTable
+        <ProductList
           products={products}
-          selectedId={selectedId}
-          onSelect={(id) => {
-            void openEdit(id)
+          sales={isProductsApiEnabled() ? sales : {}}
+          salesError={salesError}
+          onOpen={(id) => {
+            navigate(`/admin/produse/${encodeURIComponent(id)}`)
           }}
+          onDuplicate={(product) => {
+            navigate('/admin/produse/nou', {
+              state: { duplicateOf: product.id },
+            })
+          }}
+          onDelete={(product) => setPending({ kind: 'deleteProduct', product })}
         />
       </section>
-
-      {formMode ? (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget && !pending) setFormMode(null)
-          }}
-        >
-          <div
-            className="modal-panel panel"
-            role="dialog"
-            aria-modal="true"
-            aria-label={
-              formMode.kind === 'new'
-                ? 'Produs nou'
-                : `Editează: ${formMode.product.name}`
-            }
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="modal-panel__body">
-              <ProductForm
-                key={formMode.kind === 'new' ? 'new' : formMode.product.id}
-                variant="modal"
-                mode={
-                  formMode.kind === 'new'
-                    ? { kind: 'new' }
-                    : { kind: 'edit', product: formMode.product }
-                }
-                onSave={handleSave}
-                onDelete={
-                  formMode.kind === 'edit' ? handleDelete : undefined
-                }
-                onCancel={() => setFormMode(null)}
-              />
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       <ConfirmModal
         open={pending?.kind === 'deleteProduct'}
@@ -348,16 +283,14 @@ export function GestiunePage({
         title="Ștergi produsul?"
         description={
           pending?.kind === 'deleteProduct'
-            ? `„${pending.name}” va fi eliminat din gestiune. Acțiunea nu poate fi anulată.`
+            ? `„${pending.product.name}” va fi eliminat din gestiune și din catalog. Acțiunea nu poate fi anulată.`
             : ''
         }
         confirmLabel="Șterge produsul"
+        busy={deleting}
         onCancel={() => setPending(null)}
         onConfirm={() => {
-          if (pending?.kind !== 'deleteProduct') return
-          removeProduct(pending.id)
-          setFormMode(null)
-          setPending(null)
+          void handleDeleteConfirmed()
         }}
       />
 
@@ -375,7 +308,6 @@ export function GestiunePage({
         onConfirm={() => {
           if (pending?.kind !== 'restoreBackup') return
           replaceAll(pending.products)
-          setFormMode(null)
           setPending(null)
         }}
       />

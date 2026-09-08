@@ -24,3 +24,6 @@ server/api/config.php
 *.njsproj
 *.sln
 *.sw?
+
+# Config local Claude Code (launch.json)
+.claude/

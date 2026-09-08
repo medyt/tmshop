@@ -153,6 +153,45 @@ export function useProducts() {
     [apiEnabled],
   )
 
+  /**
+   * Salvare cu rezultat (editorul de produs pe pagină dedicată).
+   * Creează sau actualizează în funcție de existența id-ului în listă.
+   */
+  const saveProduct = useCallback(
+    async (p: Product): Promise<Product> => {
+      const exists = products.some((x) => x.id === p.id)
+      if (!apiEnabled) {
+        setProducts((prev) =>
+          exists ? prev.map((x) => (x.id === p.id ? p : x)) : [...prev, p],
+        )
+        return p
+      }
+      const saved = exists
+        ? await updateProductRemote(p)
+        : await createProduct(p)
+      const light = withoutHeavyFields(saved)
+      setProducts((prev) =>
+        exists
+          ? prev.map((x) => (x.id === light.id ? light : x))
+          : [...prev, light],
+      )
+      setError(null)
+      return saved
+    },
+    [apiEnabled, products],
+  )
+
+  const deleteProduct = useCallback(
+    async (id: string): Promise<void> => {
+      if (apiEnabled) {
+        await deleteProductRemote(id)
+      }
+      setProducts((prev) => prev.filter((x) => x.id !== id))
+      setError(null)
+    },
+    [apiEnabled],
+  )
+
   const replaceAll = useCallback(
     (next: Product[]) => {
       if (apiEnabled) {
@@ -182,6 +221,8 @@ export function useProducts() {
     addProduct,
     updateProduct,
     removeProduct,
+    saveProduct,
+    deleteProduct,
     replaceAll,
     reloadProducts,
   }

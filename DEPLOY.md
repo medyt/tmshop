@@ -73,6 +73,7 @@ Rulează în această ordine (în phpMyAdmin: selectează baza → tab SQL → e
 11. `sql/migrate-return-received-server.sql` — flag colet reîntors la magazin
 12. `sql/migrate-smartbill-storno-server.sql` — coloane storno factură (stoc la retur)
 13. `sql/migrate-delivery-carrier-server.sql` — `delivery_carrier` (DPD / Fan Courier)
+14. `sql/migrate-product-slug-history-server.sql` — `product_slug_history` (adresele vechi ale produselor redirecționează 301 către cea curentă; fără tabel, redirecturile sunt dezactivate, restul merge)
 
 (Pe mediul local rulează echivalentele fără `-server`, începând cu `sql/shoptop.sql`.)
 

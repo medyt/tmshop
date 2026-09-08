@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { Link, useParams } from 'react-router-dom'
+import { Link, Navigate, useLocation, useParams } from 'react-router-dom'
 
 import { ProductImage } from '../../components/ProductImage'
 import { ProductCarousel } from '../../components/shop/ProductCarousel'
@@ -20,7 +20,11 @@ import { trackAddToCart, trackViewContent } from '../../lib/analytics'
 import { metaCatalogId } from '../../lib/metaCatalogCsv'
 import { primaryImageUrl, normalizeImageUrl } from '../../lib/productImages'
 import { sanitizeHtml, looksLikeHtml, htmlToBlocks, htmlToPlainText } from '../../lib/richText'
-import { findListedProduct, productPagePath } from '../../lib/shopProductRoutes'
+import {
+  findListedProduct,
+  productPagePath,
+  productSlug,
+} from '../../lib/shopProductRoutes'
 import {
   cartLineTotal,
   clientStockLimit,
@@ -86,6 +90,7 @@ type ProductPageProps = {
 
 export function ProductPage({ products }: ProductPageProps) {
   const { productId = '' } = useParams()
+  const location = useLocation()
   const { addProduct, lines: cartLines, setQuantity } = useCart()
   const { notify } = useShopNotice()
   const listedFromCatalog = findListedProduct(products, productId)
@@ -356,6 +361,14 @@ export function ProductPage({ products }: ProductPageProps) {
       )
     }
     return <NotFoundPage />
+  }
+
+  // Adresă veche (produs redenumit) sau acces după id: trimitem la adresa
+  // canonică, păstrând parametrii de tracking (fbclid, utm_*).
+  if (decodeURIComponent(productId) !== productSlug(product)) {
+    return (
+      <Navigate to={`${productPagePath(product)}${location.search}`} replace />
+    )
   }
 
   const content = productContent

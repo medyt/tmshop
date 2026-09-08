@@ -133,6 +133,9 @@ export function parseProductRecord(o: Record<string, unknown>): Product | null {
     stockQty,
     imageUrls: imageUrlsFromRecord(o),
     slug: typeof o.slug === 'string' && o.slug.trim() ? o.slug.trim() : undefined,
+    previousSlugs: Array.isArray(o.previousSlugs)
+      ? o.previousSlugs.filter((s): s is string => typeof s === 'string' && s.trim() !== '')
+      : undefined,
     category:
       typeof o.category === 'string' && o.category.trim()
         ? o.category.trim()

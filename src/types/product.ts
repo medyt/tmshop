@@ -32,8 +32,10 @@ export type Product = {
   salePrice: number
   /** Procent de discount afișat în magazin; prețul final rămâne `salePrice`. */
   discountPercent?: number
-  /** Slug SEO pentru URL-ul public al produsului. */
+  /** Slug SEO pentru URL-ul public al produsului. Se fixează la creare. */
   slug?: string
+  /** Adrese vechi care redirecționează către produs (doar admin, la detaliu). */
+  previousSlugs?: string[]
   /** Categorie pentru filtrare în catalog. */
   category?: string
   /** Bucăți disponibile în inventarul intern (depozit). */

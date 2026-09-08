@@ -13,7 +13,6 @@ import {
   formatRoDate,
   formatStatNumber,
   rangeForDay,
-  resolveStatsRange,
   shiftMonthKey,
   shiftStatsRange,
   statsRangeMonthKey,
@@ -23,6 +22,7 @@ import {
   type ProductSalesRow,
   type SeriesPoint,
 } from '../lib/adminStats'
+import { useStatsRange, type StatsRangeState } from '../hooks/useStatsRange'
 import { isApiEnabled } from '../lib/apiClient'
 import { fetchOrders, backfillCourierCosts, isOrdersApiEnabled } from '../lib/ordersApi'
 import {
@@ -30,7 +30,10 @@ import {
   isExpenseLinesApiEnabled,
 } from '../lib/monthExpenseLinesApi'
 import { formatRon } from '../lib/shopCatalog'
+import { primaryImageUrl } from '../lib/productImages'
+import { ProductImage } from '../components/ProductImage'
 import type { Order } from '../types/order'
+import './AdminHomePage.css'
 
 function DeltaLine({
   comparison,
@@ -288,7 +291,13 @@ function EmptyRank({ label }: { label: string }) {
   return <p className="muted small admin-stats__rank-empty">{label}</p>
 }
 
-function TopProductsTable({ rows }: { rows: ProductSalesRow[] }) {
+function TopProductsTable({
+  rows,
+  imageById,
+}: {
+  rows: ProductSalesRow[]
+  imageById: Map<string, string>
+}) {
   if (rows.length === 0) {
     return <EmptyRank label="Niciun produs vândut în perioada selectată." />
   }
@@ -313,10 +322,27 @@ function TopProductsTable({ rows }: { rows: ProductSalesRow[] }) {
           {rows.slice(0, 10).map((row) => (
             <tr key={row.productId}>
               <td>
-                <span className="cell-title">{row.productName}</span>
-                {row.productSku ? (
-                  <span className="cell-sku">{row.productSku}</span>
-                ) : null}
+                <span className="ah-stat-product">
+                  <span className="ah-stat-thumb" aria-hidden="true">
+                    {imageById.get(row.productId) ? (
+                      <ProductImage
+                        src={imageById.get(row.productId)}
+                        alt=""
+                        loading="lazy"
+                        placeholderClassName="ah-stat-thumb-placeholder"
+                        placeholderLabel="—"
+                      />
+                    ) : (
+                      <span className="ah-stat-thumb-placeholder">—</span>
+                    )}
+                  </span>
+                  <div>
+                    <span className="cell-title">{row.productName}</span>
+                    {row.productSku ? (
+                      <span className="cell-sku">{row.productSku}</span>
+                    ) : null}
+                  </div>
+                </span>
               </td>
               <td className="admin-stats__num">
                 <strong>{row.quantitySold}</strong>
@@ -478,15 +504,109 @@ function seriesValues(
   return points.map(pick)
 }
 
-export function AdminStatsDashboard() {
+/** Bara cu ← → / preset / De la / Până la + textul de comparație. */
+export function StatsRangeToolbar({ state }: { state: StatsRangeState }) {
+  const { range, preset, now, applyRange, onPresetChange, setCustomBounds } = state
+  return (
+    <section className="panel admin-stats__toolbar" aria-label="Perioadă statistici">
+      <div className="admin-stats__toolbar-main">
+        <div className="admin-stats__nav">
+          <button
+            type="button"
+            className="btn secondary"
+            aria-label="Intervalul anterior"
+            onClick={() => applyRange(shiftStatsRange(range, -1, now))}
+          >
+            ←
+          </button>
+          <button
+            type="button"
+            className="btn secondary"
+            aria-label="Intervalul următor"
+            disabled={!range.canGoNext}
+            onClick={() => applyRange(shiftStatsRange(range, 1, now))}
+          >
+            →
+          </button>
+        </div>
+        <label className="field admin-stats__preset">
+          <span className="sr-only">Perioadă</span>
+          <select
+            value={preset}
+            onChange={(e) => onPresetChange(e.target.value as DateRangePreset)}
+            aria-label="Filtru perioadă"
+          >
+            {STATS_PRESET_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field admin-stats__date">
+          <span>De la</span>
+          <input
+            type="date"
+            value={range.startKey}
+            max={toLocalDateKey(now)}
+            onChange={(e) => setCustomBounds(e.target.value, range.inclusiveEndKey)}
+          />
+        </label>
+        <label className="field admin-stats__date">
+          <span>Până la</span>
+          <input
+            type="date"
+            value={range.inclusiveEndKey}
+            min={range.startKey}
+            max={toLocalDateKey(now)}
+            onChange={(e) => setCustomBounds(range.startKey, e.target.value)}
+          />
+        </label>
+      </div>
+      <p className="muted small admin-stats__compare">
+        <strong>{range.label}</strong>
+        {' · '}
+        comparat cu {range.previousLabel}
+      </p>
+    </section>
+  )
+}
+
+type AdminStatsDashboardProps = {
+  /** Comenzi deja încărcate de pagina părinte (evită un al doilea fetch). */
+  orders?: Order[]
+  ordersLoading?: boolean
+  ordersError?: string | null
+  onReloadOrders?: () => Promise<void> | void
+  /** Filtru de perioadă controlat de părinte; bara nu se mai afișează intern. */
+  rangeState?: StatsRangeState
+}
+
+export function AdminStatsDashboard({
+  orders: externalOrders,
+  ordersLoading,
+  ordersError,
+  onReloadOrders,
+  rangeState,
+}: AdminStatsDashboardProps = {}) {
+  const external = externalOrders !== undefined
+  const ownRange = useStatsRange()
+  const { range, now, applyRange } = rangeState ?? ownRange
   const { products } = useProducts()
-  const [orders, setOrders] = useState<Order[]>([])
-  const [loading, setLoading] = useState(isOrdersApiEnabled())
-  const [error, setError] = useState<string | null>(null)
-  const [now, setNow] = useState(() => new Date())
-  const [preset, setPreset] = useState<DateRangePreset>('today')
-  const [customStart, setCustomStart] = useState('')
-  const [customEnd, setCustomEnd] = useState('')
+  const imageById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const product of products) {
+      const url = primaryImageUrl(product)
+      if (url) map.set(product.id, url)
+    }
+    return map
+  }, [products])
+  const [internalOrders, setOrders] = useState<Order[]>([])
+  const [internalLoading, setLoading] = useState(!external && isOrdersApiEnabled())
+  const [internalError, setError] = useState<string | null>(null)
+  const orders = external ? externalOrders : internalOrders
+  const loading = external ? Boolean(ordersLoading) : internalLoading
+  const error = external ? (ordersError ?? null) : internalError
   const [backfillBusy, setBackfillBusy] = useState(false)
   const [backfillMessage, setBackfillMessage] = useState<string | null>(null)
   const [expensesTotal, setExpensesTotal] = useState(0)
@@ -495,6 +615,7 @@ export function AdminStatsDashboard() {
   const [expensesError, setExpensesError] = useState<string | null>(null)
 
   const reloadOrders = () => {
+    if (external) return onReloadOrders?.()
     if (!isOrdersApiEnabled()) return
     setLoading(true)
     setError(null)
@@ -515,11 +636,7 @@ export function AdminStatsDashboard() {
   }
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 60_000)
-    return () => window.clearInterval(timer)
-  }, [])
-
-  useEffect(() => {
+    if (external) return
     if (!isOrdersApiEnabled()) {
       setLoading(false)
       return
@@ -546,12 +663,7 @@ export function AdminStatsDashboard() {
     return () => {
       cancelled = true
     }
-  }, [])
-
-  const range = useMemo(
-    () => resolveStatsRange(preset, customStart, customEnd, now),
-    [preset, customStart, customEnd, now],
-  )
+  }, [external])
 
   const monthKey = useMemo(() => statsRangeMonthKey(range), [range])
 
@@ -610,24 +722,6 @@ export function AdminStatsDashboard() {
           new Date(range.calendarEndExclusive.getTime() - 1),
         )}`
   const previousName = range.previousLabel
-
-  const applyRange = (
-    next: { preset: DateRangePreset; customStart: string; customEnd: string },
-  ) => {
-    setPreset(next.preset)
-    setCustomStart(next.customStart)
-    setCustomEnd(next.customEnd)
-  }
-
-  const onPresetChange = (value: DateRangePreset) => {
-    if (value === 'custom') {
-      setPreset('custom')
-      setCustomStart(range.startKey)
-      setCustomEnd(range.inclusiveEndKey)
-      return
-    }
-    setPreset(value)
-  }
 
   const onBackfillCourierCosts = () => {
     if (backfillBusy) return
@@ -707,79 +801,7 @@ export function AdminStatsDashboard() {
 
           {!loading && !error ? (
             <div className="admin-stats">
-              <section className="panel admin-stats__toolbar">
-                <div className="admin-stats__toolbar-main">
-                  <div className="admin-stats__nav">
-                    <button
-                      type="button"
-                      className="btn secondary"
-                      aria-label="Intervalul anterior"
-                      onClick={() => applyRange(shiftStatsRange(range, -1, now))}
-                    >
-                      ←
-                    </button>
-                    <button
-                      type="button"
-                      className="btn secondary"
-                      aria-label="Intervalul următor"
-                      disabled={!range.canGoNext}
-                      onClick={() => applyRange(shiftStatsRange(range, 1, now))}
-                    >
-                      →
-                    </button>
-                  </div>
-                  <label className="field admin-stats__preset">
-                    <span className="sr-only">Perioadă</span>
-                    <select
-                      value={preset}
-                      onChange={(e) =>
-                        onPresetChange(e.target.value as DateRangePreset)
-                      }
-                      aria-label="Filtru perioadă"
-                    >
-                      {STATS_PRESET_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="field admin-stats__date">
-                    <span>De la</span>
-                    <input
-                      type="date"
-                      value={range.startKey}
-                      max={toLocalDateKey(now)}
-                      onChange={(e) => {
-                        const value = e.target.value
-                        setPreset('custom')
-                        setCustomStart(value)
-                        setCustomEnd(range.inclusiveEndKey)
-                      }}
-                    />
-                  </label>
-                  <label className="field admin-stats__date">
-                    <span>Până la</span>
-                    <input
-                      type="date"
-                      value={range.inclusiveEndKey}
-                      min={range.startKey}
-                      max={toLocalDateKey(now)}
-                      onChange={(e) => {
-                        const value = e.target.value
-                        setPreset('custom')
-                        setCustomStart(range.startKey)
-                        setCustomEnd(value)
-                      }}
-                    />
-                  </label>
-                </div>
-                <p className="muted small admin-stats__compare">
-                  <strong>{range.label}</strong>
-                  {' · '}
-                  comparat cu {range.previousLabel}
-                </p>
-              </section>
+              {rangeState ? null : <StatsRangeToolbar state={ownRange} />}
 
               <section className="admin-stats__kpis" aria-label="Indicatori">
                 <KpiCard
@@ -972,7 +994,7 @@ export function AdminStatsDashboard() {
                 aria-label="Clasamente"
               >
                 <RankCard title="Cele mai vândute produse" wide>
-                  <TopProductsTable rows={dashboard.products} />
+                  <TopProductsTable rows={dashboard.products} imageById={imageById} />
                 </RankCard>
               </section>
 

@@ -16,6 +16,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $pdo = shoptop_pdo();
 
+// Coloanele returnate după POST/PUT (slug-ul final vine din DB, nu din request).
+$detailFieldsForSave = 'id, name, slug, category, sku, ean, brand, google_category, mpn,
+               purchase_price, sale_price, discount_percent, stock_qty, image_urls, description, notes';
+if (shoptop_products_has_bundle_offers($pdo)) {
+    $detailFieldsForSave .= ', bundle_offers';
+}
+
 function shoptop_column_exists(PDO $pdo, string $table, string $column): bool
 {
     $stmt = $pdo->prepare(
@@ -47,6 +54,44 @@ if ($method === 'GET') {
         && ($_GET['full'] === '1' || strtolower((string) $_GET['full']) === 'true');
     $wantAddons = isset($_GET['addons'])
         && ($_GET['addons'] === '1' || strtolower((string) $_GET['addons']) === 'true');
+
+    // Admin: vânzări per produs în ultimele 7 / 30 / 90 zile (comenzi distincte + bucăți).
+    // Exclude comenzile anulate, returnate și draft-urile card neplătite.
+    $wantSales = isset($_GET['sales'])
+        && ($_GET['sales'] === '1' || strtolower((string) $_GET['sales']) === 'true');
+    if ($wantSales) {
+        shoptop_require_admin();
+        $where = ["o.created_at >= DATE_SUB(NOW(), INTERVAL 90 DAY)", "o.status NOT IN ('cancelled', 'returned')"];
+        if (shoptop_column_exists($pdo, 'orders', 'payment_method')
+            && shoptop_column_exists($pdo, 'orders', 'payment_status')) {
+            $where[] = "(o.payment_method <> 'card' OR o.payment_status = 'paid'"
+                . " OR o.status NOT IN ('new', 'confirmed')"
+                . " OR (o.awb_number IS NOT NULL AND o.awb_number <> ''))";
+        }
+        if (shoptop_column_exists($pdo, 'orders', 'return_received')) {
+            $where[] = 'o.return_received = 0';
+        }
+        $sql = 'SELECT oi.product_id,
+                COUNT(DISTINCT CASE WHEN o.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) THEN o.id END) AS o7,
+                COUNT(DISTINCT CASE WHEN o.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN o.id END) AS o30,
+                COUNT(DISTINCT o.id) AS o90,
+                SUM(CASE WHEN o.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) THEN oi.quantity ELSE 0 END) AS u7,
+                SUM(CASE WHEN o.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN oi.quantity ELSE 0 END) AS u30,
+                SUM(oi.quantity) AS u90
+             FROM order_items oi
+             INNER JOIN orders o ON o.id = oi.order_id
+             WHERE ' . implode(' AND ', $where) . '
+             GROUP BY oi.product_id';
+        $out = [];
+        foreach ($pdo->query($sql)->fetchAll() as $row) {
+            $out[(string) $row['product_id']] = [
+                'd7' => ['orders' => (int) $row['o7'], 'units' => (int) $row['u7']],
+                'd30' => ['orders' => (int) $row['o30'], 'units' => (int) $row['u30']],
+                'd90' => ['orders' => (int) $row['o90'], 'units' => (int) $row['u90']],
+            ];
+        }
+        shoptop_json_response($out === [] ? new stdClass() : $out);
+    }
 
     // Catalog public pentru prețurile addon-urilor de checkout (din DB).
     if ($wantAddons) {
@@ -83,15 +128,28 @@ if ($method === 'GET') {
             $stmt->execute(['slug' => $productId]);
             $row = $stmt->fetch();
         }
+        // Adresă veche (produs redenumit): întoarcem produsul cu slug-ul curent,
+        // iar pagina redirecționează către adresa canonică.
+        if (!$row) {
+            $previousOwner = shoptop_product_id_for_previous_slug($pdo, $productId);
+            if ($previousOwner !== null) {
+                $stmt = $pdo->prepare('SELECT ' . $detailFields . ' FROM products WHERE id = :id LIMIT 1');
+                $stmt->execute(['id' => $previousOwner]);
+                $row = $stmt->fetch();
+            }
+        }
         if (!$row) {
             shoptop_json_error('Produsul nu a fost gasit.', 404);
         }
         if (!$isAdmin && shoptop_is_virtual_product_row($row)) {
             shoptop_json_error('Produsul nu a fost gasit.', 404);
         }
-        shoptop_json_response(
-            $isAdmin ? shoptop_row_to_product($row) : shoptop_row_to_shop_product($row)
-        );
+        if ($isAdmin) {
+            $product = shoptop_row_to_product($row);
+            $product['previousSlugs'] = shoptop_product_previous_slugs($pdo, (string) $row['id']);
+            shoptop_json_response($product);
+        }
+        shoptop_json_response(shoptop_row_to_shop_product($row));
     }
 
     $includeHeavyText = $wantFull && $isAdmin;
@@ -141,7 +199,12 @@ if ($method === 'POST') {
     }
 
     shoptop_baselinker_sync_product($pdo, $product);
-    shoptop_json_response(shoptop_row_to_product($product), 201);
+    $stmt = $pdo->prepare('SELECT ' . $detailFieldsForSave . ' FROM products WHERE id = :id LIMIT 1');
+    $stmt->execute(['id' => $product['id']]);
+    $row = $stmt->fetch() ?: $product;
+    $out = shoptop_row_to_product($row);
+    $out['previousSlugs'] = [];
+    shoptop_json_response($out, 201);
 }
 
 if ($method === 'PUT') {
@@ -158,7 +221,13 @@ if ($method === 'PUT') {
     }
 
     shoptop_baselinker_sync_product($pdo, $product);
-    shoptop_json_response(shoptop_row_to_product($product));
+    // Slug-ul final (păstrat/unicizat) e citit din DB; includem și adresele vechi.
+    $stmt = $pdo->prepare('SELECT ' . $detailFieldsForSave . ' FROM products WHERE id = :id LIMIT 1');
+    $stmt->execute(['id' => $product['id']]);
+    $row = $stmt->fetch() ?: $product;
+    $out = shoptop_row_to_product($row);
+    $out['previousSlugs'] = shoptop_product_previous_slugs($pdo, (string) $product['id']);
+    shoptop_json_response($out);
 }
 
 if ($method === 'DELETE') {

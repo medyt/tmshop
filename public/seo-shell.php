@@ -51,6 +51,24 @@ if (preg_match('#^/produs/([^/]+)/?$#u', $path, $m) === 1) {
         exit;
     }
 
+    if ($row === null && $pdo instanceof PDO && function_exists('shoptop_product_id_for_previous_slug')) {
+        // Adresă veche (produs redenumit) → 301 permanent către adresa curentă.
+        // Păstrăm query string-ul (fbclid, utm_*) ca atribuirea reclamelor să meargă.
+        try {
+            $ownerId = shoptop_product_id_for_previous_slug($pdo, rawurldecode($ref));
+            $owner = $ownerId !== null ? shoptop_seo_find_product($pdo, $ownerId) : null;
+        } catch (Throwable $e) {
+            $owner = null;
+        }
+        if ($owner !== null) {
+            $query = (string) ($_SERVER['QUERY_STRING'] ?? '');
+            $target = rtrim($site, '/') . shoptop_seo_product_path($owner) . ($query !== '' ? '?' . $query : '');
+            header('X-ShopTop-SEO: product-slug-redirect');
+            header('Location: ' . $target, true, 301);
+            exit;
+        }
+    }
+
     if ($row === null) {
         // Produs inexistent → catalog (fără pagină 404 dead-end).
         header('X-ShopTop-SEO: product-missing-redirect');
