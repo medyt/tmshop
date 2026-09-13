@@ -462,6 +462,58 @@ function shoptop_return_fan_party(array $a, string $label): array
     ];
 }
 
+/**
+ * Serviciile disponibile în contul Fan (GET reports/services).
+ *
+ * @return list<string>
+ */
+function shoptop_return_fan_services(): array
+{
+    static $cached = null;
+    if ($cached !== null) {
+        return $cached;
+    }
+    $cached = [];
+    try {
+        $s = shoptop_fan_settings();
+        $res = shoptop_fan_request('GET', '/reports/services', ['clientId' => $s['client_id']]);
+        $list = is_array($res['json'] ?? null) ? ($res['json']['data'] ?? $res['json']['response'] ?? []) : [];
+        foreach (is_array($list) ? $list : [] as $svc) {
+            $name = is_array($svc) ? trim((string) ($svc['name'] ?? $svc['service'] ?? '')) : trim((string) $svc);
+            if ($name !== '') {
+                $cached[] = $name;
+            }
+        }
+    } catch (Throwable $e) {
+        $cached = [];
+    }
+    return $cached;
+}
+
+/**
+ * Serviciul Fan pentru ridicare de la terți: cel din config dacă există în cont,
+ * altfel primul din cont care sună a colectare / retur / terți.
+ */
+function shoptop_return_fan_pick_service(array $s): string
+{
+    $services = shoptop_return_fan_services();
+    $configured = trim($s['return_service']);
+    if ($services === []) {
+        return $configured !== '' ? $configured : 'Colectare';
+    }
+    foreach ($services as $name) {
+        if ($configured !== '' && strcasecmp($name, $configured) === 0) {
+            return $name;
+        }
+    }
+    foreach ($services as $name) {
+        if (preg_match('/colect|ridicare|ter[țt]i|retur|pick/iu', $name) === 1) {
+            return $name;
+        }
+    }
+    return $configured !== '' ? $configured : 'Colectare';
+}
+
 /** @return array{awb:string, parcelId:string} */
 function shoptop_return_fan_create(array $pickup, array $delivery, array $returnRow, PDO $pdo): array
 {
@@ -473,9 +525,22 @@ function shoptop_return_fan_create(array $pickup, array $delivery, array $return
     shoptop_return_validate_address($delivery, 'Adresa de livrare');
 
     $orderId = (string) $returnRow['order_id'];
+    $service = shoptop_return_fan_pick_service($s);
+    $serviceHint = static function (string $err) use ($service): string {
+        if (stripos($err, 'service') === false && stripos($err, 'serviciu') === false) {
+            return $err;
+        }
+        $list = shoptop_return_fan_services();
+        return $err . ' Am încercat serviciul „' . $service . '”. '
+            . ($list !== []
+                ? 'Servicii în contul tău Fan: ' . implode(', ', $list) . '. '
+                : 'Nu am putut citi lista serviciilor din cont. ')
+            . 'Pune numele corect al serviciului de ridicare de la terți în config.php → fan → return_service, '
+            . 'sau cere la Fan Courier activarea lui pe contract.';
+    };
     $info = [
-        // „Colectare” = ridicare de la terți; cu „Standard” Fan ignoră blocul sender.
-        'service' => $s['return_service'],
+        // Ridicare de la terți; cu „Standard” Fan ignoră blocul sender.
+        'service' => $service,
         'packages' => ['parcel' => 1, 'envelope' => 0],
         'weight' => $s['default_weight_kg'],
         'cod' => 0,
@@ -500,12 +565,7 @@ function shoptop_return_fan_create(array $pickup, array $delivery, array $return
     $res = shoptop_fan_request('POST', '/intern-awb', null, $payload);
     if (!$res['ok'] || !is_array($res['json'])) {
         $err = (string) ($res['error'] ?? 'crearea AWB de retur a eșuat.');
-        if (stripos($err, 'service') !== false || stripos($err, 'serviciu') !== false) {
-            $err .= ' — serviciul „' . $s['return_service'] . '” nu e acceptat de contul tău Fan. '
-                . 'Pune în config.php → fan → return_service numele exact al serviciului de '
-                . 'ridicare de la terți din SelfAWB.';
-        }
-        throw new RuntimeException('Fan Courier: ' . $err);
+        throw new RuntimeException('Fan Courier: ' . $serviceHint($err));
     }
     $list = $res['json']['response'] ?? $res['json']['data'] ?? null;
     $first = is_array($list) && isset($list[0]) && is_array($list[0]) ? $list[0] : (is_array($list) ? $list : null);
@@ -514,7 +574,7 @@ function shoptop_return_fan_create(array $pickup, array $delivery, array $return
     }
     if (!empty($first['errors'])) {
         $msg = shoptop_fan_format_errors($first['errors']);
-        throw new RuntimeException('Fan Courier: ' . ($msg !== '' ? $msg : 'cererea a fost respinsă.'));
+        throw new RuntimeException('Fan Courier: ' . $serviceHint($msg !== '' ? $msg : 'cererea a fost respinsă.'));
     }
     $awb = trim((string) ($first['awbNumber'] ?? $first['awb'] ?? ''));
     if ($awb === '') {
