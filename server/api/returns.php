@@ -216,6 +216,23 @@ function shoptop_return_notify_customer(string $newStatus, array $returnRow, arr
 if ($method === 'GET') {
     shoptop_require_admin();
 
+    // Adresele propuse (ridicare = client, livrare = punct de lucru) înainte de emitere.
+    if (isset($_GET['awbDefaults'])) {
+        $id = is_numeric($_GET['id'] ?? null) ? (int) $_GET['id'] : 0;
+        $carrier = trim((string) ($_GET['carrier'] ?? 'fan-courier'));
+        $stmt = $pdo->prepare(
+            'SELECT id, order_id, customer_name, customer_email, customer_phone, items
+             FROM return_requests WHERE id = :id LIMIT 1'
+        );
+        $stmt->execute(['id' => $id]);
+        $row = $stmt->fetch();
+        if (!$row) {
+            shoptop_json_error('Cererea nu a fost gasita.', 404);
+        }
+        header('Cache-Control: no-store');
+        shoptop_json_response(shoptop_return_awb_defaults($pdo, $row, $carrier));
+    }
+
     // Eticheta AWB de retur (PDF/HTML inline).
     if (isset($_GET['printAwb'])) {
         $id = is_numeric($_GET['id'] ?? null) ? (int) $_GET['id'] : 0;
@@ -293,10 +310,17 @@ if ($method === 'POST') {
         try {
             if ($action === 'issueReturnAwb') {
                 $carrier = trim((string) ($body['carrier'] ?? 'fan-courier'));
-                $issued = shoptop_return_issue_awb($pdo, $row, $carrier);
+                $pickupIn = is_array($body['pickup'] ?? null) ? $body['pickup'] : null;
+                $deliveryIn = is_array($body['delivery'] ?? null) ? $body['delivery'] : null;
+                $issued = shoptop_return_issue_awb($pdo, $row, $carrier, $pickupIn, $deliveryIn);
                 if (!empty($body['notifyCustomer'])) {
                     try {
-                        $emailSent = shoptop_return_notify_pickup($row, $issued['carrier'], $issued['awb']);
+                        $emailSent = shoptop_return_notify_pickup(
+                            $row,
+                            $issued['carrier'],
+                            $issued['awb'],
+                            $pickupIn !== null ? shoptop_return_address_from_input($pickupIn) : null
+                        );
                         if (!$emailSent) {
                             $emailWarning = 'AWB emis, dar emailul catre client nu a putut fi trimis.';
                         }

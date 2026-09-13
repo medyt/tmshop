@@ -6,50 +6,63 @@ declare(strict_types=1);
  * AWB de retur „în oglindă”: curierul ridică coletul de la adresa clientului
  * (din comanda asociată cererii) și îl livrează la magazin. Transportul e
  * plătit de magazin (destinatar). Suportă DPD și Fan Courier.
+ *
+ * Adresa de ridicare = clientul (editabilă din admin).
+ * Adresa de livrare = punctul de lucru: config.php → return_pickup dacă există,
+ * altfel adresa din contul curierului (DPD client/contract, Fan reports/branches).
  */
 
 require_once __DIR__ . '/lib.php';
 require_once __DIR__ . '/dpd.php';
 require_once __DIR__ . '/fan.php';
 
-/**
- * Adresa magazinului (destinatar) din config.php → return_pickup.
- *
- * @return array{
- *   name:string, contact:string, phone:string, county:string, city:string,
- *   street:string, street_number:string, address_extra:string, postal_code:string,
- *   dpd_site_id:int, dpd_client_id:int
- * }
- */
-function shoptop_return_pickup_settings(): array
+/** Structura comună pentru o adresă (ridicare sau livrare). */
+const SHOPTOP_RETURN_ADDRESS_KEYS = [
+    'name', 'contact', 'phone', 'email', 'county', 'city', 'street', 'streetNumber',
+    'addressExtra', 'postalCode', 'dpdSiteId', 'dpdClientId',
+];
+
+function shoptop_return_empty_address(): array
 {
-    $cfg = shoptop_config()['return_pickup'] ?? [];
-    if (!is_array($cfg)) {
-        $cfg = [];
-    }
-    $s = [
-        'name' => trim((string) ($cfg['name'] ?? (shoptop_config()['operator_name'] ?? 'ShopTop'))),
-        'contact' => trim((string) ($cfg['contact'] ?? '')),
-        'phone' => shoptop_dpd_normalize_phone((string) ($cfg['phone'] ?? (shoptop_config()['return_phone'] ?? ''))),
-        'county' => trim((string) ($cfg['county'] ?? '')),
-        'city' => trim((string) ($cfg['city'] ?? '')),
-        'street' => trim((string) ($cfg['street'] ?? '')),
-        'street_number' => trim((string) ($cfg['street_number'] ?? '1')),
-        'address_extra' => trim((string) ($cfg['address_extra'] ?? '')),
-        'postal_code' => trim((string) ($cfg['postal_code'] ?? '')),
-        'dpd_site_id' => (int) ($cfg['dpd_site_id'] ?? 0),
-        'dpd_client_id' => (int) ($cfg['dpd_client_id'] ?? 0),
+    return [
+        'name' => '', 'contact' => '', 'phone' => '', 'email' => '', 'county' => '', 'city' => '',
+        'street' => '', 'streetNumber' => '', 'addressExtra' => '', 'postalCode' => '',
+        'dpdSiteId' => 0, 'dpdClientId' => 0,
     ];
-    if ($s['contact'] === '') {
-        $s['contact'] = $s['name'];
+}
+
+/** Normalizează o adresă primită din request (doar cheile cunoscute, trim). */
+function shoptop_return_address_from_input(mixed $input): array
+{
+    $out = shoptop_return_empty_address();
+    if (!is_array($input)) {
+        return $out;
     }
-    if ($s['city'] === '' || $s['street'] === '' || $s['county'] === '' || $s['phone'] === '') {
-        throw new RuntimeException(
-            'Adresa magazinului pentru retururi nu este configurată. Completează în config.php '
-            . 'blocul return_pickup (county, city, street, street_number, postal_code, phone).'
-        );
+    foreach (SHOPTOP_RETURN_ADDRESS_KEYS as $k) {
+        if (!array_key_exists($k, $input)) {
+            continue;
+        }
+        if ($k === 'dpdSiteId' || $k === 'dpdClientId') {
+            $out[$k] = is_numeric($input[$k]) ? (int) $input[$k] : 0;
+        } else {
+            $out[$k] = trim((string) $input[$k]);
+        }
     }
-    return $s;
+    $out['phone'] = shoptop_dpd_normalize_phone($out['phone']);
+    return $out;
+}
+
+/** Suprascrie câmpurile nevide din $override peste $base. */
+function shoptop_return_merge_address(array $base, array $override): array
+{
+    foreach (SHOPTOP_RETURN_ADDRESS_KEYS as $k) {
+        $v = $override[$k] ?? null;
+        if ($v === null || $v === '' || $v === 0) {
+            continue;
+        }
+        $base[$k] = $v;
+    }
+    return $base;
 }
 
 function shoptop_return_awb_columns_available(PDO $pdo): bool
@@ -68,7 +81,7 @@ function shoptop_return_awb_columns_available(PDO $pdo): bool
     return $cached;
 }
 
-/** Rândul comenzii (toate coloanele) + produsele, pentru adresa clientului. */
+/** Rândul comenzii (toate coloanele). */
 function shoptop_return_load_order(PDO $pdo, string $orderId): ?array
 {
     $stmt = $pdo->prepare('SELECT * FROM orders WHERE id = :id LIMIT 1');
@@ -107,180 +120,300 @@ function shoptop_return_contents(array $returnRow, PDO $pdo): string
     return mb_substr($text, 0, 100);
 }
 
-/**
- * Expeditorul (clientul) din comandă, validat pentru curier.
- *
- * @return array{name:string, phone:string, email:string, address:array<string,string|int>}
- */
-function shoptop_return_sender_from_order(array $orderRow, array $returnRow): array
+/* ---------------------------------------------------------------------------
+ * Adresa de RIDICARE (clientul) — implicit din comandă.
+ * ------------------------------------------------------------------------- */
+
+function shoptop_return_default_pickup(array $orderRow, array $returnRow): array
 {
-    $address = shoptop_dpd_order_address_parts($orderRow);
-    if ($address['city'] === '' || $address['street'] === '') {
-        throw new RuntimeException(
-            'Comanda #' . (string) $orderRow['id'] . ' nu are adresa structurată (localitate/stradă). '
-            . 'Deschide comanda, completează adresa la „Client & livrare” și salvează, apoi reîncearcă.'
-        );
-    }
-    $phone = shoptop_dpd_normalize_phone(
+    $a = shoptop_dpd_order_address_parts($orderRow);
+    $addr = shoptop_return_empty_address();
+    $addr['name'] = trim((string) ($returnRow['customer_name'] ?? '')) ?: trim((string) ($orderRow['customer_name'] ?? ''));
+    $addr['phone'] = shoptop_dpd_normalize_phone(
         (string) ($returnRow['customer_phone'] ?? '') ?: (string) ($orderRow['customer_phone'] ?? '')
     );
-    if ($phone === '') {
-        throw new RuntimeException('Telefonul clientului lipsește; curierul nu poate programa ridicarea.');
-    }
-    $name = trim((string) ($returnRow['customer_name'] ?? '')) ?: trim((string) ($orderRow['customer_name'] ?? ''));
-    if (mb_strlen($name) < 3) {
-        throw new RuntimeException('Numele clientului este prea scurt pentru AWB.');
-    }
-    return [
-        'name' => mb_substr($name, 0, 60),
-        'phone' => $phone,
-        'email' => trim((string) ($returnRow['customer_email'] ?? '') ?: (string) ($orderRow['customer_email'] ?? '')),
-        'address' => $address,
-    ];
+    $addr['email'] = trim((string) ($returnRow['customer_email'] ?? '') ?: (string) ($orderRow['customer_email'] ?? ''));
+    $addr['county'] = $a['countyName'] !== '' ? $a['countyName'] : $a['county'];
+    $addr['city'] = $a['city'];
+    $addr['street'] = $a['street'];
+    $addr['streetNumber'] = $a['streetNumber'];
+    $addr['addressExtra'] = $a['addressExtra'];
+    $addr['postalCode'] = $a['postalCode'];
+    $addr['dpdSiteId'] = (int) $a['dpdSiteId'];
+    return $addr;
 }
 
-/** clientId-ul contractului DPD (config sau din API client/contract), 0 dacă nu se poate. */
-function shoptop_return_dpd_client_id(): int
+/* ---------------------------------------------------------------------------
+ * Adresa de LIVRARE (punctul de lucru) — config sau contul curierului.
+ * ------------------------------------------------------------------------- */
+
+/** Din config.php → return_pickup (dacă e completat). */
+function shoptop_return_delivery_from_config(): ?array
 {
-    static $cached = null;
-    if ($cached !== null) {
+    $cfg = shoptop_config()['return_pickup'] ?? null;
+    if (!is_array($cfg)) {
+        return null;
+    }
+    $addr = shoptop_return_empty_address();
+    $addr['name'] = trim((string) ($cfg['name'] ?? ''));
+    $addr['contact'] = trim((string) ($cfg['contact'] ?? ''));
+    $addr['phone'] = shoptop_dpd_normalize_phone((string) ($cfg['phone'] ?? ''));
+    $addr['county'] = trim((string) ($cfg['county'] ?? ''));
+    $addr['city'] = trim((string) ($cfg['city'] ?? ''));
+    $addr['street'] = trim((string) ($cfg['street'] ?? ''));
+    $addr['streetNumber'] = trim((string) ($cfg['street_number'] ?? ''));
+    $addr['addressExtra'] = trim((string) ($cfg['address_extra'] ?? ''));
+    $addr['postalCode'] = trim((string) ($cfg['postal_code'] ?? ''));
+    $addr['dpdSiteId'] = (int) ($cfg['dpd_site_id'] ?? 0);
+    $addr['dpdClientId'] = (int) ($cfg['dpd_client_id'] ?? 0);
+    if ($addr['city'] === '' && $addr['street'] === '') {
+        return null;
+    }
+    return $addr;
+}
+
+/** Din contul DPD: primul client de contract (POST client/contract). */
+function shoptop_return_delivery_from_dpd(): ?array
+{
+    static $cached = false;
+    if ($cached !== false) {
         return $cached;
     }
-    $configured = shoptop_return_pickup_settings()['dpd_client_id'];
-    if ($configured > 0) {
-        return $cached = $configured;
+    $cached = null;
+    if (!shoptop_dpd_enabled()) {
+        return null;
     }
-    $cached = 0;
     try {
         $res = shoptop_dpd_request('client/contract', []);
-        $list = is_array($res['json'] ?? null) ? $res['json'] : [];
-        foreach ($list as $entry) {
-            if (is_array($entry) && !empty($entry['clientId'])) {
-                $cached = (int) $entry['clientId'];
-                break;
-            }
-        }
     } catch (Throwable $e) {
-        $cached = 0;
+        return null;
     }
-    return $cached;
+    $list = is_array($res['json'] ?? null) ? $res['json'] : [];
+    // Răspunsul poate fi lista direct sau { clients: [...] }.
+    if (isset($list['clients']) && is_array($list['clients'])) {
+        $list = $list['clients'];
+    }
+    foreach ($list as $c) {
+        if (!is_array($c) || empty($c['clientId'])) {
+            continue;
+        }
+        $a = is_array($c['address'] ?? null) ? $c['address'] : [];
+        $addr = shoptop_return_empty_address();
+        $addr['dpdClientId'] = (int) $c['clientId'];
+        $addr['name'] = trim((string) ($c['clientName'] ?? ''));
+        $addr['contact'] = trim((string) ($c['contactName'] ?? ''));
+        $addr['phone'] = shoptop_dpd_normalize_phone((string) ($c['phone1']['number'] ?? ''));
+        $addr['email'] = trim((string) ($c['email'] ?? ''));
+        $addr['county'] = trim((string) ($a['regionName'] ?? $a['stateName'] ?? ''));
+        $addr['city'] = trim((string) ($a['siteName'] ?? ''));
+        $addr['street'] = trim((string) ($a['streetName'] ?? ''));
+        $addr['streetNumber'] = trim((string) ($a['streetNo'] ?? ''));
+        $addr['addressExtra'] = trim((string) ($a['addressNote'] ?? ''));
+        $addr['postalCode'] = trim((string) ($a['postCode'] ?? ''));
+        $addr['dpdSiteId'] = (int) ($a['siteId'] ?? 0);
+        $cached = $addr;
+        return $addr;
+    }
+    return null;
+}
+
+/** Din contul Fan Courier: sucursala client_id (GET reports/branches). */
+function shoptop_return_delivery_from_fan(): ?array
+{
+    static $cached = false;
+    if ($cached !== false) {
+        return $cached;
+    }
+    $cached = null;
+    if (!shoptop_fan_enabled()) {
+        return null;
+    }
+    $s = shoptop_fan_settings();
+    try {
+        $res = shoptop_fan_request('GET', '/reports/branches', ['clientId' => $s['client_id']]);
+    } catch (Throwable $e) {
+        return null;
+    }
+    if (!$res['ok'] || !is_array($res['json'])) {
+        return null;
+    }
+    $list = $res['json']['data'] ?? $res['json']['response'] ?? [];
+    if (!is_array($list)) {
+        return null;
+    }
+    $chosen = null;
+    foreach ($list as $b) {
+        if (!is_array($b)) {
+            continue;
+        }
+        if ((int) ($b['id'] ?? $b['clientId'] ?? 0) === (int) $s['client_id']) {
+            $chosen = $b;
+            break;
+        }
+        if ($chosen === null) {
+            $chosen = $b;
+        }
+    }
+    if ($chosen === null) {
+        return null;
+    }
+    $a = is_array($chosen['address'] ?? null) ? $chosen['address'] : $chosen;
+    $addr = shoptop_return_empty_address();
+    $addr['name'] = trim((string) ($chosen['name'] ?? $chosen['branchName'] ?? ''));
+    $addr['contact'] = trim((string) ($chosen['contactPerson'] ?? $chosen['contact'] ?? ''));
+    $addr['phone'] = shoptop_dpd_normalize_phone((string) ($chosen['phone'] ?? $a['phone'] ?? ''));
+    $addr['email'] = trim((string) ($chosen['email'] ?? ''));
+    $addr['county'] = trim((string) ($a['county'] ?? $a['judet'] ?? ''));
+    $addr['city'] = trim((string) ($a['locality'] ?? $a['localitate'] ?? $a['city'] ?? ''));
+    $addr['street'] = trim((string) ($a['street'] ?? $a['strada'] ?? ''));
+    $addr['streetNumber'] = trim((string) ($a['streetNo'] ?? $a['number'] ?? $a['nr'] ?? ''));
+    $addr['addressExtra'] = trim((string) ($a['building'] ?? ''));
+    $addr['postalCode'] = trim((string) ($a['zipCode'] ?? $a['postalCode'] ?? $a['codPostal'] ?? ''));
+    $cached = $addr;
+    return $addr;
 }
 
 /**
- * DPD: shipment cu expeditor terț (clientul) și destinatar magazinul; plătește destinatarul.
+ * Adresa de livrare implicită + sursa ei.
  *
- * @return array{awb:string, parcelId:string, shipmentId:string}
+ * @return array{address:array, source:string}
  */
-function shoptop_return_dpd_create(array $orderRow, array $returnRow, PDO $pdo): array
+function shoptop_return_default_delivery(string $carrier): array
+{
+    $fromConfig = shoptop_return_delivery_from_config();
+    $fromCourier = $carrier === 'dpd' ? shoptop_return_delivery_from_dpd() : shoptop_return_delivery_from_fan();
+
+    if ($fromCourier !== null && ($fromCourier['city'] !== '' || $fromCourier['dpdClientId'] > 0)) {
+        // Contul curierului e sursa principală; config completează golurile.
+        $addr = $fromConfig !== null ? shoptop_return_merge_address($fromCourier, $fromConfig) : $fromCourier;
+        // Dar câmpurile curierului rămân prioritare unde există.
+        $addr = shoptop_return_merge_address($addr, $fromCourier);
+        return ['address' => $addr, 'source' => $carrier === 'dpd' ? 'Contul DPD (client de contract)' : 'Contul Fan Courier (sucursala)'];
+    }
+    if ($fromConfig !== null) {
+        return ['address' => $fromConfig, 'source' => 'config.php (return_pickup)'];
+    }
+    $empty = shoptop_return_empty_address();
+    $empty['name'] = trim((string) (shoptop_config()['operator_name'] ?? ''));
+    $empty['phone'] = shoptop_dpd_normalize_phone((string) (shoptop_config()['return_phone'] ?? ''));
+    return ['address' => $empty, 'source' => 'necompletat'];
+}
+
+/** Validare minimă pentru ambele adrese; aruncă mesaj clar. */
+function shoptop_return_validate_address(array $a, string $label, bool $allowClientIdOnly = false): void
+{
+    if ($allowClientIdOnly && $a['dpdClientId'] > 0) {
+        return;
+    }
+    $missing = [];
+    if (mb_strlen($a['name']) < 3) {
+        $missing[] = 'nume';
+    }
+    if ($a['phone'] === '') {
+        $missing[] = 'telefon';
+    }
+    if ($a['county'] === '') {
+        $missing[] = 'județ';
+    }
+    if ($a['city'] === '') {
+        $missing[] = 'localitate';
+    }
+    if ($a['street'] === '') {
+        $missing[] = 'stradă';
+    }
+    if ($missing !== []) {
+        throw new RuntimeException($label . ': lipsesc ' . implode(', ', $missing) . '.');
+    }
+}
+
+/* ---------------------------------------------------------------------------
+ * DPD
+ * ------------------------------------------------------------------------- */
+
+/** Adresă DPD (siteId sau siteName + postCode). */
+function shoptop_return_dpd_address(array $a, string $label): array
+{
+    $out = [
+        'countryId' => SHOPTOP_DPD_COUNTRY_RO,
+        'streetName' => mb_substr($a['street'], 0, 50),
+        'streetNo' => mb_substr($a['streetNumber'] !== '' ? $a['streetNumber'] : '1', 0, 10),
+    ];
+    $siteId = (int) $a['dpdSiteId'];
+    $postal = $a['postalCode'];
+    if ($siteId <= 0) {
+        $site = shoptop_dpd_find_site($a['city'], $a['county'], $postal);
+        if ($site !== null) {
+            $siteId = (int) $site['siteId'];
+            if ($postal === '' && !empty($site['postCode'])) {
+                $postal = (string) $site['postCode'];
+            }
+        }
+    }
+    if ($siteId > 0) {
+        $out['siteId'] = $siteId;
+    } else {
+        $out['siteName'] = mb_substr($a['city'], 0, 50);
+        if ($postal === '') {
+            throw new RuntimeException(
+                $label . ': localitatea „' . $a['city'] . '” nu are site ID DPD și lipsește codul poștal.'
+            );
+        }
+    }
+    if ($postal !== '') {
+        $out['postCode'] = $postal;
+    }
+    if ($a['addressExtra'] !== '') {
+        $out['addressNote'] = mb_substr($a['addressExtra'], 0, 200);
+    }
+    return $out;
+}
+
+/** @return array{awb:string, parcelId:string} */
+function shoptop_return_dpd_create(array $pickup, array $delivery, array $returnRow, PDO $pdo): array
 {
     if (!shoptop_dpd_enabled()) {
         throw new RuntimeException('DPD nu este configurat (username/password/service_id).');
     }
     $settings = shoptop_dpd_settings();
-    $shop = shoptop_return_pickup_settings();
-    $client = shoptop_return_sender_from_order($orderRow, $returnRow);
-    $addr = $client['address'];
+    shoptop_return_validate_address($pickup, 'Adresa de ridicare');
+    shoptop_return_validate_address($delivery, 'Adresa de livrare', true);
 
-    // Expeditor = clientul.
-    $senderAddress = [
-        'countryId' => SHOPTOP_DPD_COUNTRY_RO,
-        'streetName' => mb_substr($addr['street'], 0, 50),
-        'streetNo' => mb_substr($addr['streetNumber'] !== '' ? $addr['streetNumber'] : '1', 0, 10),
-    ];
-    $siteId = (int) $addr['dpdSiteId'];
-    if ($siteId <= 0) {
-        $site = shoptop_dpd_find_site(
-            $addr['city'],
-            $addr['countyName'] !== '' ? $addr['countyName'] : $addr['county'],
-            $addr['postalCode']
-        );
-        if ($site !== null) {
-            $siteId = (int) $site['siteId'];
-            if ($addr['postalCode'] === '' && !empty($site['postCode'])) {
-                $addr['postalCode'] = (string) $site['postCode'];
-            }
-        }
-    }
-    if ($siteId > 0) {
-        $senderAddress['siteId'] = $siteId;
-    } else {
-        $senderAddress['siteName'] = mb_substr($addr['city'], 0, 50);
-        if ($addr['postalCode'] === '') {
-            throw new RuntimeException(
-                'Localitatea clientului „' . $addr['city'] . '” nu are site ID DPD și lipsește codul poștal. '
-                . 'Completează codul poștal pe comandă și reîncearcă.'
-            );
-        }
-    }
-    if ($addr['postalCode'] !== '') {
-        $senderAddress['postCode'] = $addr['postalCode'];
-    }
-    if ($addr['addressExtra'] !== '') {
-        $senderAddress['addressNote'] = mb_substr($addr['addressExtra'], 0, 200);
-    }
     $sender = [
         'privatePerson' => true,
-        'clientName' => $client['name'],
-        'phone1' => ['number' => $client['phone']],
-        'address' => $senderAddress,
+        'clientName' => mb_substr($pickup['name'], 0, 60),
+        'phone1' => ['number' => $pickup['phone']],
+        'address' => shoptop_return_dpd_address($pickup, 'Adresa de ridicare'),
     ];
-    if ($client['email'] !== '') {
-        $sender['email'] = mb_substr($client['email'], 0, 255);
+    if ($pickup['email'] !== '') {
+        $sender['email'] = mb_substr($pickup['email'], 0, 255);
     }
 
-    // Destinatar = magazinul (clientId de contract dacă există, altfel adresă).
-    $clientId = shoptop_return_dpd_client_id();
-    if ($clientId > 0) {
-        $recipient = ['clientId' => $clientId];
+    if ($delivery['dpdClientId'] > 0) {
+        $recipient = ['clientId' => $delivery['dpdClientId']];
     } else {
-        $shopSiteId = $shop['dpd_site_id'];
-        if ($shopSiteId <= 0) {
-            $site = shoptop_dpd_find_site($shop['city'], $shop['county'], $shop['postal_code']);
-            $shopSiteId = $site !== null ? (int) $site['siteId'] : 0;
-        }
-        $shopAddress = [
-            'countryId' => SHOPTOP_DPD_COUNTRY_RO,
-            'streetName' => mb_substr($shop['street'], 0, 50),
-            'streetNo' => mb_substr($shop['street_number'], 0, 10),
-        ];
-        if ($shopSiteId > 0) {
-            $shopAddress['siteId'] = $shopSiteId;
-        } else {
-            $shopAddress['siteName'] = mb_substr($shop['city'], 0, 50);
-        }
-        if ($shop['postal_code'] !== '') {
-            $shopAddress['postCode'] = $shop['postal_code'];
-        }
-        if ($shop['address_extra'] !== '') {
-            $shopAddress['addressNote'] = mb_substr($shop['address_extra'], 0, 200);
-        }
         $recipient = [
             'privatePerson' => false,
-            'clientName' => mb_substr($shop['name'], 0, 60),
-            'contactName' => mb_substr($shop['contact'], 0, 60),
-            'phone1' => ['number' => $shop['phone']],
-            'address' => $shopAddress,
+            'clientName' => mb_substr($delivery['name'], 0, 60),
+            'contactName' => mb_substr($delivery['contact'] !== '' ? $delivery['contact'] : $delivery['name'], 0, 60),
+            'phone1' => ['number' => $delivery['phone']],
+            'address' => shoptop_return_dpd_address($delivery, 'Adresa de livrare'),
         ];
     }
 
+    $orderId = (string) $returnRow['order_id'];
     $payload = [
         'sender' => $sender,
         'recipient' => $recipient,
-        'service' => [
-            'serviceId' => $settings['service_id'],
-            'autoAdjustPickupDate' => true,
-        ],
+        'service' => ['serviceId' => $settings['service_id'], 'autoAdjustPickupDate' => true],
         'content' => [
             'parcelsCount' => 1,
             'totalWeight' => $settings['default_weight_kg'],
             'contents' => shoptop_return_contents($returnRow, $pdo),
             'package' => 'BOX',
         ],
-        'payment' => [
-            'courierServicePayer' => 'RECIPIENT',
-        ],
-        'ref1' => mb_substr('RETUR-' . (string) $orderRow['id'], 0, 30),
-        'shipmentNote' => mb_substr('Retur comanda #' . (string) $orderRow['id'] . ' - ridicare de la client', 0, 200),
+        'payment' => ['courierServicePayer' => 'RECIPIENT'],
+        'ref1' => mb_substr('RETUR-' . $orderId, 0, 30),
+        'shipmentNote' => mb_substr('Retur comanda #' . $orderId . ' - ridicare de la client', 0, 200),
     ];
 
     $res = shoptop_dpd_request('shipment', $payload);
@@ -293,39 +426,53 @@ function shoptop_return_dpd_create(array $orderRow, array $returnRow, PDO $pdo):
     }
     $parcels = $res['json']['parcels'] ?? [];
     $parcelId = is_array($parcels) && isset($parcels[0]['id']) ? trim((string) $parcels[0]['id']) : $shipmentId;
-
-    return ['awb' => $shipmentId, 'parcelId' => $parcelId, 'shipmentId' => $shipmentId];
+    return ['awb' => $shipmentId, 'parcelId' => $parcelId];
 }
 
-/**
- * Fan Courier: AWB cu expeditor terț (clientul), destinatar magazinul, plata destinatar.
- *
- * @return array{awb:string, parcelId:string, shipmentId:string}
- */
-function shoptop_return_fan_create(array $orderRow, array $returnRow, PDO $pdo): array
+/* ---------------------------------------------------------------------------
+ * Fan Courier
+ * ------------------------------------------------------------------------- */
+
+function shoptop_return_fan_party(array $a, string $label): array
 {
-    if (!shoptop_fan_enabled()) {
-        throw new RuntimeException('Fan Courier nu este configurat (username, password, client_id).');
-    }
-    $s = shoptop_fan_settings();
-    $shop = shoptop_return_pickup_settings();
-    $client = shoptop_return_sender_from_order($orderRow, $returnRow);
-    $addr = $client['address'];
-    $county = $addr['countyName'] !== '' ? $addr['countyName'] : $addr['county'];
-    if ($county === '') {
-        throw new RuntimeException('Județul clientului lipsește pe comandă; completează-l și reîncearcă.');
-    }
-    $postal = $addr['postalCode'];
+    $postal = $a['postalCode'];
     if ($postal === '') {
-        $site = shoptop_dpd_find_site($addr['city'], $county, '');
+        $site = shoptop_dpd_find_site($a['city'], $a['county'], '');
         if ($site !== null && !empty($site['postCode'])) {
             $postal = trim((string) $site['postCode']);
         }
     }
     if ($postal === '') {
-        throw new RuntimeException('Codul poștal al clientului lipsește (Fan îl cere). Completează-l pe comandă.');
+        throw new RuntimeException($label . ': codul poștal lipsește (Fan Courier îl cere).');
     }
+    return [
+        'name' => mb_substr($a['name'], 0, 60),
+        'contactPerson' => mb_substr($a['contact'] !== '' ? $a['contact'] : $a['name'], 0, 50),
+        'phone' => $a['phone'],
+        'email' => $a['email'] !== '' ? $a['email'] : null,
+        'address' => [
+            'county' => mb_substr($a['county'], 0, 50),
+            'locality' => mb_substr($a['city'], 0, 50),
+            'street' => mb_substr($a['street'], 0, 255),
+            'streetNo' => mb_substr($a['streetNumber'] !== '' ? $a['streetNumber'] : '1', 0, 10),
+            'zipCode' => mb_substr($postal, 0, 6),
+            'building' => mb_substr($a['addressExtra'], 0, 20),
+            'pickupLocation' => '',
+        ],
+    ];
+}
 
+/** @return array{awb:string, parcelId:string} */
+function shoptop_return_fan_create(array $pickup, array $delivery, array $returnRow, PDO $pdo): array
+{
+    if (!shoptop_fan_enabled()) {
+        throw new RuntimeException('Fan Courier nu este configurat (username, password, client_id).');
+    }
+    $s = shoptop_fan_settings();
+    shoptop_return_validate_address($pickup, 'Adresa de ridicare');
+    shoptop_return_validate_address($delivery, 'Adresa de livrare');
+
+    $orderId = (string) $returnRow['order_id'];
     $info = [
         'service' => $s['service'],
         'packages' => ['parcel' => 1, 'envelope' => 0],
@@ -335,47 +482,17 @@ function shoptop_return_fan_create(array $orderRow, array $returnRow, PDO $pdo):
         'payment' => 'recipient',
         'refund' => null,
         'returnPayment' => null,
-        'observation' => 'Retur comanda #' . (string) $orderRow['id'] . ' - ridicare de la client',
+        'observation' => 'Retur comanda #' . $orderId . ' - ridicare de la client',
         'content' => shoptop_return_contents($returnRow, $pdo),
         'dimensions' => ['length' => 10, 'width' => 10, 'height' => 5],
         'options' => $s['epod'] ? ['X'] : [],
-    ];
-    $sender = [
-        'name' => $client['name'],
-        'contactPerson' => mb_substr($client['name'], 0, 50),
-        'phone' => $client['phone'],
-        'email' => $client['email'] !== '' ? $client['email'] : null,
-        'address' => [
-            'county' => mb_substr($county, 0, 50),
-            'locality' => mb_substr($addr['city'], 0, 50),
-            'street' => mb_substr($addr['street'], 0, 255),
-            'streetNo' => mb_substr($addr['streetNumber'] !== '' ? $addr['streetNumber'] : '1', 0, 10),
-            'zipCode' => mb_substr($postal, 0, 6),
-            'building' => mb_substr($addr['addressExtra'], 0, 20),
-            'pickupLocation' => '',
-        ],
-    ];
-    $recipient = [
-        'name' => mb_substr($shop['name'], 0, 60),
-        'contactPerson' => mb_substr($shop['contact'], 0, 50),
-        'phone' => $shop['phone'],
-        'email' => null,
-        'address' => [
-            'county' => mb_substr($shop['county'], 0, 50),
-            'locality' => mb_substr($shop['city'], 0, 50),
-            'street' => mb_substr($shop['street'], 0, 255),
-            'streetNo' => mb_substr($shop['street_number'], 0, 10),
-            'zipCode' => mb_substr($shop['postal_code'], 0, 6),
-            'building' => mb_substr($shop['address_extra'], 0, 20),
-            'pickupLocation' => '',
-        ],
     ];
     $payload = [
         'clientId' => $s['client_id'],
         'shipments' => [[
             'info' => $info,
-            'sender' => $sender,
-            'recipient' => $recipient,
+            'sender' => shoptop_return_fan_party($pickup, 'Adresa de ridicare'),
+            'recipient' => shoptop_return_fan_party($delivery, 'Adresa de livrare'),
         ]],
     ];
 
@@ -396,16 +513,50 @@ function shoptop_return_fan_create(array $orderRow, array $returnRow, PDO $pdo):
     if ($awb === '') {
         throw new RuntimeException('Fan Courier nu a returnat numărul AWB de retur.');
     }
-    return ['awb' => $awb, 'parcelId' => $awb, 'shipmentId' => $awb];
+    return ['awb' => $awb, 'parcelId' => $awb];
+}
+
+/* ---------------------------------------------------------------------------
+ * Orchestrare
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Adresele propuse în admin înainte de emitere.
+ *
+ * @return array{pickup:array, delivery:array, deliverySource:string, carrierConfigured:bool}
+ */
+function shoptop_return_awb_defaults(PDO $pdo, array $returnRow, string $carrier): array
+{
+    $carrier = $carrier === 'dpd' ? 'dpd' : 'fan-courier';
+    $order = shoptop_return_load_order($pdo, (string) $returnRow['order_id']);
+    $pickup = $order !== null
+        ? shoptop_return_default_pickup($order, $returnRow)
+        : shoptop_return_merge_address(shoptop_return_empty_address(), [
+            'name' => (string) ($returnRow['customer_name'] ?? ''),
+            'phone' => shoptop_dpd_normalize_phone((string) ($returnRow['customer_phone'] ?? '')),
+            'email' => (string) ($returnRow['customer_email'] ?? ''),
+        ]);
+    $delivery = shoptop_return_default_delivery($carrier);
+    return [
+        'pickup' => $pickup,
+        'delivery' => $delivery['address'],
+        'deliverySource' => $delivery['source'],
+        'carrierConfigured' => $carrier === 'dpd' ? shoptop_dpd_enabled() : shoptop_fan_enabled(),
+    ];
 }
 
 /**
- * Emite AWB de retur pentru cererea dată și îl salvează pe cerere.
+ * Emite AWB de retur și îl salvează pe cerere.
  *
- * @return array{awb:string, carrier:string, parcelId:string, issuedAt:string}
+ * @return array{awb:string, carrier:string, parcelId:string}
  */
-function shoptop_return_issue_awb(PDO $pdo, array $returnRow, string $carrier): array
-{
+function shoptop_return_issue_awb(
+    PDO $pdo,
+    array $returnRow,
+    string $carrier,
+    ?array $pickupOverride = null,
+    ?array $deliveryOverride = null,
+): array {
     if (!shoptop_return_awb_columns_available($pdo)) {
         throw new RuntimeException(
             'Lipsesc coloanele AWB pe return_requests. Rulează sql/migrate-return-awb(-server).sql.'
@@ -417,14 +568,21 @@ function shoptop_return_issue_awb(PDO $pdo, array $returnRow, string $carrier): 
         );
     }
     $carrier = $carrier === 'dpd' ? 'dpd' : 'fan-courier';
-    $order = shoptop_return_load_order($pdo, (string) $returnRow['order_id']);
-    if ($order === null) {
-        throw new RuntimeException('Comanda #' . (string) $returnRow['order_id'] . ' nu există; nu pot prelua adresa clientului.');
+    $defaults = shoptop_return_awb_defaults($pdo, $returnRow, $carrier);
+    $pickup = $pickupOverride !== null
+        ? shoptop_return_merge_address($defaults['pickup'], shoptop_return_address_from_input($pickupOverride))
+        : $defaults['pickup'];
+    $delivery = $deliveryOverride !== null
+        ? shoptop_return_merge_address($defaults['delivery'], shoptop_return_address_from_input($deliveryOverride))
+        : $defaults['delivery'];
+    // Dacă operatorul a schimbat localitatea, siteId-ul vechi nu mai e valabil.
+    if ($pickupOverride !== null && trim((string) ($pickupOverride['city'] ?? '')) !== '' && $pickupOverride['city'] !== $defaults['pickup']['city']) {
+        $pickup['dpdSiteId'] = 0;
     }
 
     $created = $carrier === 'dpd'
-        ? shoptop_return_dpd_create($order, $returnRow, $pdo)
-        : shoptop_return_fan_create($order, $returnRow, $pdo);
+        ? shoptop_return_dpd_create($pickup, $delivery, $returnRow, $pdo)
+        : shoptop_return_fan_create($pickup, $delivery, $returnRow, $pdo);
 
     $stmt = $pdo->prepare(
         'UPDATE return_requests
@@ -439,12 +597,7 @@ function shoptop_return_issue_awb(PDO $pdo, array $returnRow, string $carrier): 
         'id' => (int) $returnRow['id'],
     ]);
 
-    return [
-        'awb' => $created['awb'],
-        'carrier' => $carrier,
-        'parcelId' => $created['parcelId'],
-        'issuedAt' => date('Y-m-d H:i:s'),
-    ];
+    return ['awb' => $created['awb'], 'carrier' => $carrier, 'parcelId' => $created['parcelId']];
 }
 
 function shoptop_return_cancel_awb(PDO $pdo, array $returnRow): void
@@ -484,22 +637,31 @@ function shoptop_return_print_awb(array $returnRow): string
 }
 
 /** Email către client: curierul vine să ridice coletul (best-effort). */
-function shoptop_return_notify_pickup(array $returnRow, string $carrier, string $awb): bool
+function shoptop_return_notify_pickup(array $returnRow, string $carrier, string $awb, ?array $pickup = null): bool
 {
-    $email = trim((string) ($returnRow['customer_email'] ?? ''));
+    $email = trim((string) ($pickup['email'] ?? '') ?: (string) ($returnRow['customer_email'] ?? ''));
     if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         return false;
     }
     require_once __DIR__ . '/mailer.php';
     $carrierLabel = $carrier === 'dpd' ? 'DPD' : 'Fan Courier';
-    $orderId = htmlspecialchars((string) ($returnRow['order_id'] ?? ''), ENT_QUOTES, 'UTF-8');
-    $name = htmlspecialchars((string) ($returnRow['customer_name'] ?? ''), ENT_QUOTES, 'UTF-8');
-    $awbH = htmlspecialchars($awb, ENT_QUOTES, 'UTF-8');
+    $h = static fn (string $v): string => htmlspecialchars($v, ENT_QUOTES, 'UTF-8');
+    $orderId = $h((string) ($returnRow['order_id'] ?? ''));
+    $name = $h((string) ($pickup['name'] ?? '') ?: (string) ($returnRow['customer_name'] ?? ''));
+    $addressLine = '';
+    if (is_array($pickup) && ($pickup['street'] ?? '') !== '') {
+        $addressLine = $h(trim(
+            'Str. ' . $pickup['street'] . ($pickup['streetNumber'] !== '' ? ' nr. ' . $pickup['streetNumber'] : '')
+            . ($pickup['addressExtra'] !== '' ? ', ' . $pickup['addressExtra'] : '')
+            . ', ' . $pickup['city'] . ($pickup['county'] !== '' ? ', jud. ' . $pickup['county'] : '')
+        ));
+    }
     $content = '<p>Bună, ' . $name . ',</p>'
         . '<p>Am programat ridicarea coletului de retur pentru comanda <strong>#' . $orderId . '</strong> '
         . 'prin <strong>' . $carrierLabel . '</strong>. Transportul este plătit de noi.</p>'
-        . '<p>Număr AWB: <strong>' . $awbH . '</strong></p>'
-        . '<p>Te rugăm să pregătești coletul (produsele împachetate, cu accesoriile) la adresa din comandă. '
+        . '<p>Număr AWB: <strong>' . $h($awb) . '</strong></p>'
+        . ($addressLine !== '' ? '<p>Adresa de ridicare: ' . $addressLine . '</p>' : '')
+        . '<p>Te rugăm să pregătești coletul (produsele împachetate, cu accesoriile). '
         . 'Curierul te va contacta telefonic înainte de ridicare, de obicei în 1–2 zile lucrătoare. '
         . 'Nu trebuie să plătești nimic curierului.</p>'
         . '<p>După ce primim coletul, rambursăm suma în contul IBAN indicat în cerere.</p>';

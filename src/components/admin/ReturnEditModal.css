@@ -52,6 +52,64 @@
   letter-spacing: 0.02em;
 }
 
+.return-pickup__confirm {
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.return-pickup__addrs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+@media (max-width: 760px) {
+  .return-pickup__addrs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.return-pickup__addr {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.7rem 0.8rem 0.8rem;
+  background: var(--table-head-bg);
+}
+
+.return-pickup__addr-title {
+  margin: 0 0 0.2rem;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.return-pickup__addr-hint {
+  margin: 0 0 0.55rem;
+}
+
+.return-pickup__addr-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem 0.6rem;
+}
+
+.return-pickup__addr-grid .field {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.return-pickup__addr-grid .field input {
+  background: var(--panel-bg);
+}
+
+.return-pickup__wide {
+  grid-column: 1 / -1;
+}
+
 .return-table__awb {
   display: block;
   margin-top: 0.25rem;

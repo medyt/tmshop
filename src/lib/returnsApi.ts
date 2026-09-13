@@ -42,11 +42,74 @@ export type ReturnAwbResult = {
   return: ReturnRequest
 }
 
-/** Creează AWB „în oglindă”: curierul ridică de la adresa clientului din comandă. */
+/** Adresă (ridicare sau livrare) pentru AWB-ul de retur. */
+export type ReturnAwbAddress = {
+  name: string
+  contact: string
+  phone: string
+  email: string
+  county: string
+  city: string
+  street: string
+  streetNumber: string
+  addressExtra: string
+  postalCode: string
+  dpdSiteId: number
+  dpdClientId: number
+}
+
+export type ReturnAwbDefaults = {
+  pickup: ReturnAwbAddress
+  delivery: ReturnAwbAddress
+  /** De unde vine adresa de livrare (contul curierului / config). */
+  deliverySource: string
+  carrierConfigured: boolean
+}
+
+export const EMPTY_RETURN_ADDRESS: ReturnAwbAddress = {
+  name: '', contact: '', phone: '', email: '', county: '', city: '', street: '',
+  streetNumber: '', addressExtra: '', postalCode: '', dpdSiteId: 0, dpdClientId: 0,
+}
+
+function parseReturnAddress(raw: unknown): ReturnAwbAddress {
+  const r = (raw ?? {}) as Record<string, unknown>
+  const s = (k: string) => (typeof r[k] === 'string' ? (r[k] as string) : '')
+  const n = (k: string) => (Number.isFinite(Number(r[k])) ? Number(r[k]) : 0)
+  return {
+    name: s('name'), contact: s('contact'), phone: s('phone'), email: s('email'),
+    county: s('county'), city: s('city'), street: s('street'), streetNumber: s('streetNumber'),
+    addressExtra: s('addressExtra'), postalCode: s('postalCode'),
+    dpdSiteId: n('dpdSiteId'), dpdClientId: n('dpdClientId'),
+  }
+}
+
+/** Adresele propuse înainte de emitere: client (din comandă) și punctul de lucru. */
+export async function fetchReturnAwbDefaults(
+  id: number,
+  carrier: ReturnAwbCarrier,
+): Promise<ReturnAwbDefaults> {
+  const res = await apiFetch(
+    `/returns.php?awbDefaults=1&id=${encodeURIComponent(String(id))}&carrier=${encodeURIComponent(carrier)}`,
+    { cache: 'no-store' },
+    { credentials: 'include' },
+  )
+  if (!res.ok) throw new Error(await readErrorMessage(res))
+  const data = (await res.json()) as Record<string, unknown>
+  return {
+    pickup: parseReturnAddress(data.pickup),
+    delivery: parseReturnAddress(data.delivery),
+    deliverySource: typeof data.deliverySource === 'string' ? data.deliverySource : '',
+    carrierConfigured: Boolean(data.carrierConfigured),
+  }
+}
+
+/** Creează AWB „în oglindă”: curierul ridică de la client și livrează la punctul de lucru. */
 export async function issueReturnAwb(input: {
   id: number
   carrier: ReturnAwbCarrier
   notifyCustomer: boolean
+  pickup?: ReturnAwbAddress
+  delivery?: ReturnAwbAddress
 }): Promise<ReturnAwbResult> {
   const res = await apiFetch(
     '/returns.php',

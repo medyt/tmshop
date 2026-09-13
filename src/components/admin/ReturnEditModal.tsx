@@ -4,14 +4,80 @@ import { formatRon } from '../../lib/shopCatalog'
 import { isValidRoIban, normalizeRoIban } from '../../lib/roIban'
 import './ReturnEditModal.css'
 import {
+  EMPTY_RETURN_ADDRESS,
   cancelReturnAwb,
+  fetchReturnAwbDefaults,
   issueReturnAwb,
   openReturnAwbLabel,
   updateReturnRequest,
+  type ReturnAwbAddress,
   type ReturnAwbCarrier,
   type ReturnRequest,
   type ReturnStatus,
 } from '../../lib/returnsApi'
+
+type AddressField = { key: keyof ReturnAwbAddress; label: string; wide?: boolean; type?: string }
+
+const PICKUP_FIELDS: AddressField[] = [
+  { key: 'name', label: 'Nume client', wide: true },
+  { key: 'phone', label: 'Telefon', type: 'tel' },
+  { key: 'email', label: 'Email (pentru AWB)', type: 'email' },
+  { key: 'county', label: 'Județ' },
+  { key: 'city', label: 'Localitate' },
+  { key: 'street', label: 'Strada', wide: true },
+  { key: 'streetNumber', label: 'Număr' },
+  { key: 'postalCode', label: 'Cod poștal' },
+  { key: 'addressExtra', label: 'Bloc / scară / ap. / reper', wide: true },
+]
+
+const DELIVERY_FIELDS: AddressField[] = [
+  { key: 'name', label: 'Destinatar (firma)', wide: true },
+  { key: 'contact', label: 'Persoană de contact' },
+  { key: 'phone', label: 'Telefon', type: 'tel' },
+  { key: 'county', label: 'Județ' },
+  { key: 'city', label: 'Localitate' },
+  { key: 'street', label: 'Strada', wide: true },
+  { key: 'streetNumber', label: 'Număr' },
+  { key: 'postalCode', label: 'Cod poștal' },
+  { key: 'addressExtra', label: 'Detalii (etaj, reper)', wide: true },
+]
+
+function AddressForm({
+  title,
+  hint,
+  fields,
+  value,
+  onChange,
+  disabled,
+}: {
+  title: string
+  hint?: string
+  fields: AddressField[]
+  value: ReturnAwbAddress
+  onChange: (next: ReturnAwbAddress) => void
+  disabled: boolean
+}) {
+  return (
+    <div className="return-pickup__addr">
+      <h4 className="return-pickup__addr-title">{title}</h4>
+      {hint ? <p className="muted small return-pickup__addr-hint">{hint}</p> : null}
+      <div className="return-pickup__addr-grid">
+        {fields.map((f) => (
+          <label key={f.key} className={`field${f.wide ? ' return-pickup__wide' : ''}`}>
+            <span>{f.label}</span>
+            <input
+              type={f.type ?? 'text'}
+              value={String(value[f.key] ?? '')}
+              disabled={disabled}
+              autoComplete="off"
+              onChange={(e) => onChange({ ...value, [f.key]: e.target.value })}
+            />
+          </label>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 const CARRIER_OPTIONS: Array<{ value: ReturnAwbCarrier; label: string }> = [
   { value: 'fan-courier', label: 'Fan Courier' },
@@ -47,12 +113,37 @@ function ReturnPickupCard({
 }) {
   const [carrier, setCarrier] = useState<ReturnAwbCarrier>('fan-courier')
   const [notify, setNotify] = useState(true)
-  const [busy, setBusy] = useState<'issue' | 'cancel' | 'print' | null>(null)
+  const [busy, setBusy] = useState<'issue' | 'cancel' | 'print' | 'defaults' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [confirmCancel, setConfirmCancel] = useState(false)
+  // Pasul de confirmare: adresele editabile (ridicare = client, livrare = punct de lucru).
+  const [step, setStep] = useState<'idle' | 'confirm'>('idle')
+  const [pickup, setPickup] = useState<ReturnAwbAddress>(EMPTY_RETURN_ADDRESS)
+  const [delivery, setDelivery] = useState<ReturnAwbAddress>(EMPTY_RETURN_ADDRESS)
+  const [deliverySource, setDeliverySource] = useState('')
 
   const hasAwb = Boolean(item.returnAwbNumber)
   const canIssue = item.orderExists === true && !hasAwb && !disabled && busy === null
+
+  const loadDefaults = async (nextCarrier: ReturnAwbCarrier) => {
+    setBusy('defaults')
+    setError(null)
+    try {
+      const d = await fetchReturnAwbDefaults(item.id, nextCarrier)
+      // Adresa clientului o păstrăm dacă operatorul a editat-o deja.
+      setPickup((prev) => (step === 'confirm' ? prev : d.pickup))
+      setDelivery(d.delivery)
+      setDeliverySource(d.deliverySource)
+      setStep('confirm')
+      if (!d.carrierConfigured) {
+        setError(`${carrierLabel(nextCarrier)} nu este configurat în config.php; emiterea va eșua.`)
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Nu am putut încărca adresele.')
+    } finally {
+      setBusy(null)
+    }
+  }
 
   const run = async (kind: 'issue' | 'cancel' | 'print') => {
     if (busy) return
@@ -60,7 +151,14 @@ function ReturnPickupCard({
     setError(null)
     try {
       if (kind === 'issue') {
-        const result = await issueReturnAwb({ id: item.id, carrier, notifyCustomer: notify })
+        const result = await issueReturnAwb({
+          id: item.id,
+          carrier,
+          notifyCustomer: notify,
+          pickup,
+          delivery,
+        })
+        setStep('idle')
         onUpdated(result.return, result.emailWarning)
       } else if (kind === 'cancel') {
         const result = await cancelReturnAwb(item.id)
@@ -148,7 +246,11 @@ function ReturnPickupCard({
               <select
                 value={carrier}
                 disabled={!canIssue}
-                onChange={(e) => setCarrier(e.target.value as ReturnAwbCarrier)}
+                onChange={(e) => {
+                  const next = e.target.value as ReturnAwbCarrier
+                  setCarrier(next)
+                  if (step === 'confirm') void loadDefaults(next)
+                }}
               >
                 {CARRIER_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
@@ -166,15 +268,65 @@ function ReturnPickupCard({
               />
               <span>Trimite clientului email cu AWB-ul și instrucțiuni</span>
             </label>
-            <button
-              type="button"
-              className="btn primary"
-              disabled={!canIssue}
-              onClick={() => void run('issue')}
-            >
-              {busy === 'issue' ? 'Se creează AWB…' : `Generează AWB retur (${carrierLabel(carrier)})`}
-            </button>
+            {step === 'idle' ? (
+              <button
+                type="button"
+                className="btn primary"
+                disabled={!canIssue}
+                onClick={() => void loadDefaults(carrier)}
+              >
+                {busy === 'defaults' ? 'Se încarcă adresele…' : `Generează AWB retur (${carrierLabel(carrier)})`}
+              </button>
+            ) : null}
           </div>
+
+          {step === 'confirm' ? (
+            <div className="return-pickup__confirm">
+              <div className="return-pickup__addrs">
+                <AddressForm
+                  title="Adresa de ridicare (clientul)"
+                  hint="Precompletată din comandă. Modifică dacă clientul e la altă adresă."
+                  fields={PICKUP_FIELDS}
+                  value={pickup}
+                  onChange={setPickup}
+                  disabled={busy !== null}
+                />
+                <AddressForm
+                  title="Adresa de livrare (punctul de lucru)"
+                  hint={
+                    deliverySource
+                      ? `Sursa: ${deliverySource}. Corectează dacă nu corespunde punctului de lucru.`
+                      : undefined
+                  }
+                  fields={DELIVERY_FIELDS}
+                  value={delivery}
+                  onChange={setDelivery}
+                  disabled={busy !== null}
+                />
+              </div>
+              <div className="order-edit__actions">
+                <button
+                  type="button"
+                  className="btn primary"
+                  disabled={busy !== null}
+                  onClick={() => void run('issue')}
+                >
+                  {busy === 'issue' ? 'Se creează AWB…' : `Confirmă și creează AWB (${carrierLabel(carrier)})`}
+                </button>
+                <button
+                  type="button"
+                  className="btn secondary"
+                  disabled={busy !== null}
+                  onClick={() => {
+                    setStep('idle')
+                    setError(null)
+                  }}
+                >
+                  Renunță
+                </button>
+              </div>
+            </div>
+          ) : null}
         </>
       )}
 
