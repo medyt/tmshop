@@ -157,9 +157,10 @@ return [
         'client_id' => 0,
         'service' => 'Standard',
         'service_cod' => 'Cont Colector',
-        // Serviciul Fan pentru AWB de retur cu ridicare de la client (terți). Trebuie
-        // să existe în contract; numele exact îl vezi în SelfAWB la „Servicii”.
-        'return_service' => 'Colectare',
+        // Serviciul Fan pentru AWB de retur cu ridicare de la client (terți). Gol = ales
+        // automat din contul Fan. Se completează doar dacă Fan indică un nume anume
+        // (ex. 'Standard' după activarea „ridicării de la terți” pe contract).
+        'return_service' => '',
         'default_weight_kg' => 1.0,
         'paper_size' => 'A6',
         // ePOD (X) — necesar pentru etichetă A6 la print PDF nativ Fan.

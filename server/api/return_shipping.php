@@ -498,20 +498,41 @@ function shoptop_return_fan_pick_service(array $s): string
 {
     $services = shoptop_return_fan_services();
     $configured = trim($s['return_service']);
-    if ($services === []) {
-        return $configured !== '' ? $configured : 'Colectare';
+
+    // Setat explicit în config: îl folosim (dacă lista e disponibilă, trebuie să existe în ea).
+    if ($configured !== '') {
+        if ($services === []) {
+            return $configured;
+        }
+        foreach ($services as $name) {
+            if (strcasecmp($name, $configured) === 0) {
+                return $name;
+            }
+        }
+        throw new RuntimeException(
+            'Fan Courier: serviciul „' . $configured . '” din config.php (fan → return_service) nu există în cont. '
+            . 'Servicii disponibile: ' . implode(', ', $services) . '.'
+        );
     }
+
+    // Auto: un serviciu de ridicare de la terți. „Cont Colector” = ramburs, „CollectPoint” = lockere; nu sunt asta.
     foreach ($services as $name) {
-        if ($configured !== '' && strcasecmp($name, $configured) === 0) {
+        $n = mb_strtolower($name, 'UTF-8');
+        if (str_contains($n, 'cont colector') || str_contains($n, 'collectpoint')) {
+            continue;
+        }
+        if (preg_match('/colectare|ridicare|ter[țt]i|retur|pick ?up/iu', $name) === 1) {
             return $name;
         }
     }
-    foreach ($services as $name) {
-        if (preg_match('/colect|ridicare|ter[țt]i|retur|pick/iu', $name) === 1) {
-            return $name;
-        }
-    }
-    return $configured !== '' ? $configured : 'Colectare';
+
+    throw new RuntimeException(
+        'Contul Fan Courier nu are activat un serviciu de ridicare de la terți (expeditor = clientul). '
+        . ($services !== [] ? 'Servicii în cont: ' . implode(', ', $services) . '. ' : '')
+        . 'Cere la Fan Courier (managerul de cont) activarea „ridicării de la terți” pe contract; până atunci '
+        . 'folosește DPD pentru AWB-ul de retur. Dacă Fan îți spune că ridicarea de la terți merge pe „Standard” '
+        . 'după activare, pune în config.php → fan → return_service => \'Standard\'.'
+    );
 }
 
 /** @return array{awb:string, parcelId:string} */
