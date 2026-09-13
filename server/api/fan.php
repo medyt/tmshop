@@ -11,6 +11,68 @@ require_once __DIR__ . '/lib.php';
 
 const SHOPTOP_FAN_BASE_URL = 'https://api.fancourier.ro';
 
+/**
+ * Aplatizează mesajele de eroare Fan (string / listă / obiect nested) într-un text lizibil.
+ * Evită „Array to string conversion” când API-ul întoarce errors ca array asociativ.
+ *
+ * @param mixed $errors
+ */
+function shoptop_fan_format_errors($errors): string
+{
+    if ($errors === null || $errors === false) {
+        return '';
+    }
+    if (is_string($errors) || is_int($errors) || is_float($errors) || is_bool($errors)) {
+        return trim((string) $errors);
+    }
+    if (!is_array($errors)) {
+        return '';
+    }
+
+    $parts = [];
+    foreach ($errors as $key => $value) {
+        if (is_array($value)) {
+            // Ex.: { "message": "..." } sau { "zipCode": ["required"] }
+            if (isset($value['message']) || isset($value['error']) || isset($value['msg'])) {
+                $nested = shoptop_fan_format_errors(
+                    $value['message'] ?? $value['error'] ?? $value['msg']
+                );
+            } else {
+                $nested = shoptop_fan_format_errors($value);
+            }
+            if ($nested === '') {
+                continue;
+            }
+            if (is_string($key) && $key !== '' && !ctype_digit($key)
+                && !in_array($key, ['message', 'error', 'msg', 'detail', 'details'], true)
+            ) {
+                $parts[] = $key . ': ' . $nested;
+            } else {
+                $parts[] = $nested;
+            }
+            continue;
+        }
+
+        if (is_string($value) || is_int($value) || is_float($value) || is_bool($value)) {
+            $text = trim((string) $value);
+            if ($text === '' || strcasecmp($text, 'Array') === 0) {
+                continue;
+            }
+            if (is_string($key) && $key !== '' && !ctype_digit($key)
+                && !in_array($key, ['message', 'error', 'msg', 'detail', 'details'], true)
+            ) {
+                $parts[] = $key . ': ' . $text;
+            } else {
+                $parts[] = $text;
+            }
+        }
+    }
+
+    $parts = array_values(array_unique(array_filter($parts, static fn(string $p): bool => $p !== '')));
+
+    return implode('; ', $parts);
+}
+
 function shoptop_fan_settings(): array
 {
     $cfg = shoptop_config()['fan'] ?? [];
@@ -198,12 +260,22 @@ function shoptop_fan_request(
     $error = null;
     if (!$ok) {
         if (is_array($json)) {
-            $error = (string) ($json['message'] ?? $json['error'] ?? '');
-            if ($error === '' && !empty($json['data']) && is_string($json['data'])) {
-                $error = $json['data'];
+            $error = shoptop_fan_format_errors($json['message'] ?? $json['error'] ?? null);
+            if ($error === '' && array_key_exists('data', $json)) {
+                $error = shoptop_fan_format_errors($json['data']);
+            }
+            if ($error === '' && !empty($json['response']) && is_array($json['response'])) {
+                $resp = $json['response'];
+                $firstErr = isset($resp[0]) && is_array($resp[0]) ? $resp[0] : $resp;
+                if (is_array($firstErr) && array_key_exists('errors', $firstErr)) {
+                    $error = shoptop_fan_format_errors($firstErr['errors']);
+                }
+            }
+            if ($error === '' && array_key_exists('errors', $json)) {
+                $error = shoptop_fan_format_errors($json['errors']);
             }
         }
-        if ($error === '') {
+        if ($error === null || $error === '') {
             $error = 'Fan Courier HTTP ' . $code;
         }
     }
@@ -258,10 +330,25 @@ function shoptop_fan_create_shipment(array $orderRow, array $items = []): array
     $city = $address['city'];
     $street = $address['street'];
     $streetNo = $address['streetNumber'] !== '' ? $address['streetNumber'] : '1';
+    $postalCode = trim((string) ($address['postalCode'] ?? ''));
 
     if ($city === '' || $street === '' || $county === '') {
         throw new RuntimeException(
             'Adresa comenzii este incompletă pentru Fan Courier (județ, localitate, stradă).'
+        );
+    }
+
+    // Dacă lipsește codul poștal, încearcă să-l completeze din nomenclatorul DPD (aceeași localitate).
+    if ($postalCode === '') {
+        $site = shoptop_dpd_find_site($city, $county, '');
+        if ($site !== null && !empty($site['postCode'])) {
+            $postalCode = trim((string) $site['postCode']);
+            $address['postalCode'] = $postalCode;
+        }
+    }
+    if ($postalCode === '') {
+        throw new RuntimeException(
+            'Codul poștal lipsește. Completează-l la Client & livrare, salvează comanda, apoi generează din nou AWB Fan.'
         );
     }
 
@@ -315,6 +402,8 @@ function shoptop_fan_create_shipment(array $orderRow, array $items = []): array
     $email = trim((string) ($orderRow['customer_email'] ?? ''));
     $recipient = [
         'name' => mb_substr($name, 0, 60),
+        // Obligatoriu în schema Fan; folosim același nume ca destinatarul.
+        'contactPerson' => mb_substr($name, 0, 50),
         'phone' => $phone,
         'email' => $email !== '' ? $email : null,
         'address' => [
@@ -322,7 +411,7 @@ function shoptop_fan_create_shipment(array $orderRow, array $items = []): array
             'locality' => mb_substr($city, 0, 50),
             'street' => mb_substr($street, 0, 255),
             'streetNo' => mb_substr($streetNo, 0, 10),
-            'zipCode' => mb_substr($address['postalCode'], 0, 6),
+            'zipCode' => mb_substr($postalCode, 0, 6),
             'building' => mb_substr($address['addressExtra'], 0, 20),
             'pickupLocation' => '',
         ],
@@ -356,11 +445,10 @@ function shoptop_fan_create_shipment(array $orderRow, array $items = []): array
     }
 
     if (!empty($first['errors'])) {
-        $err = $first['errors'];
-        if (is_array($err)) {
-            $err = implode('; ', array_map('strval', $err));
-        }
-        throw new RuntimeException('Fan Courier: ' . (string) $err);
+        $errMsg = shoptop_fan_format_errors($first['errors']);
+        throw new RuntimeException(
+            'Fan Courier: ' . ($errMsg !== '' ? $errMsg : 'cererea a fost respinsă (fără detalii).')
+        );
     }
 
     $awb = trim((string) ($first['awbNumber'] ?? $first['awb'] ?? ''));
@@ -759,6 +847,57 @@ function shoptop_fan_track_awbs(array $awbNumbers): array
             $awbs[] = $id;
         }
     }
+    $awbs = array_values(array_unique($awbs));
+    if ($awbs === []) {
+        return [];
+    }
+
+    $byAwb = shoptop_fan_fetch_tracking_rows($awbs);
+
+    // Al doilea pas: urmărește AWB-urile de retur (Fan generează un AWB separat).
+    $returnAwbs = [];
+    foreach ($byAwb as $track) {
+        if (!is_array($track) || isset($track['error'])) {
+            continue;
+        }
+        $ret = trim((string) ($track['returnAwbNumber'] ?? ''));
+        if ($ret !== '' && !isset($byAwb[$ret])) {
+            $returnAwbs[] = $ret;
+        }
+    }
+    $returnAwbs = array_values(array_unique($returnAwbs));
+    $returnMap = $returnAwbs !== [] ? shoptop_fan_fetch_tracking_rows($returnAwbs) : [];
+
+    $out = [];
+    foreach ($awbs as $awb) {
+        $track = $byAwb[$awb] ?? [
+            'error' => 'Fan nu a returnat tracking pentru acest AWB.',
+            'parcelId' => $awb,
+            'events' => [],
+        ];
+        if (!isset($track['error'])) {
+            $retNo = trim((string) ($track['returnAwbNumber'] ?? ''));
+            $retTrack = $retNo !== '' ? ($returnMap[$retNo] ?? $byAwb[$retNo] ?? null) : null;
+            $track = shoptop_fan_apply_return_awb_track($track, is_array($retTrack) ? $retTrack : null);
+        }
+        $out[$awb] = $track;
+    }
+
+    return $out;
+}
+
+/**
+ * GET /reports/awb/tracking pentru o listă de AWB-uri (fără enrich retur).
+ *
+ * @param string[] $awbs
+ * @return array<string, array<string, mixed>>
+ */
+function shoptop_fan_fetch_tracking_rows(array $awbs): array
+{
+    $awbs = array_values(array_unique(array_filter(array_map(
+        static fn($id): string => trim((string) $id),
+        $awbs
+    ), static fn(string $id): bool => $id !== '')));
     if ($awbs === []) {
         return [];
     }
@@ -810,7 +949,69 @@ function shoptop_fan_track_awbs(array $awbNumbers): array
             'events' => [],
         ];
     }
+
     return $out;
+}
+
+/**
+ * Combină tracking-ul AWB-ului original cu cel al AWB-ului de retur.
+ * „Returnate” (returnedToSender) = AWB-ul de retur e livrat la magazin.
+ *
+ * @param array<string, mixed> $outbound
+ * @param array<string, mixed>|null $returnTrack
+ * @return array<string, mixed>
+ */
+function shoptop_fan_apply_return_awb_track(array $outbound, ?array $returnTrack): array
+{
+    $returnAwb = trim((string) ($outbound['returnAwbNumber'] ?? ''));
+    if ($returnAwb === '') {
+        return $outbound;
+    }
+
+    $outbound['returned'] = true;
+
+    if ($returnTrack === null || isset($returnTrack['error'])) {
+        $outbound['returnedToSender'] = false;
+        $outbound['lastDescription'] = 'Retur — AWB ' . $returnAwb . ' (în curs)';
+        return $outbound;
+    }
+
+    $retEvents = is_array($returnTrack['events'] ?? null) ? $returnTrack['events'] : [];
+    if ($retEvents !== []) {
+        $merged = is_array($outbound['events'] ?? null) ? $outbound['events'] : [];
+        $base = count($merged);
+        foreach ($retEvents as $ev) {
+            if (!is_array($ev)) {
+                continue;
+            }
+            $desc = trim((string) ($ev['description'] ?? ''));
+            $merged[] = [
+                'code' => $base + count($merged) + 1,
+                'description' => 'Retur AWB: ' . ($desc !== '' ? $desc : 'eveniment'),
+                'dateTime' => (string) ($ev['dateTime'] ?? ''),
+                'place' => $ev['place'] ?? null,
+            ];
+        }
+        $outbound['events'] = $merged;
+    }
+
+    if (!empty($returnTrack['delivered'])) {
+        $outbound['returnedToSender'] = true;
+        $outbound['inTransit'] = false;
+        $outbound['outForDelivery'] = false;
+        $outbound['lastDescription'] = 'Returnat la magazin (AWB retur ' . $returnAwb . ')';
+        return $outbound;
+    }
+
+    $outbound['returnedToSender'] = false;
+    $retLast = trim((string) ($returnTrack['lastDescription'] ?? ''));
+    $outbound['lastDescription'] = $retLast !== ''
+        ? ('Retur: ' . $retLast . ' (AWB ' . $returnAwb . ')')
+        : ('Retur în tranzit (AWB ' . $returnAwb . ')');
+    $outbound['inTransit'] = !empty($returnTrack['inTransit']) || !empty($returnTrack['outForDelivery']);
+    $outbound['outForDelivery'] = !empty($returnTrack['outForDelivery']);
+
+    return $outbound;
 }
 
 /**
@@ -820,6 +1021,7 @@ function shoptop_fan_track_awbs(array $awbNumbers): array
 function shoptop_fan_normalize_track_row(array $row): array
 {
     $awb = trim((string) ($row['awbNumber'] ?? ''));
+    $returnAwb = trim((string) ($row['returnAwbNumber'] ?? ''));
     $eventsIn = is_array($row['events'] ?? null) ? $row['events'] : [];
     $events = [];
     $delivered = false;
@@ -868,17 +1070,28 @@ function shoptop_fan_normalize_track_row(array $row): array
         ) {
             $inTransit = true;
         }
+        // Refuz / retur în curs (S6, S43…) → tab Refuzate.
         if (
             str_contains($nameLower, 'refuz')
             || str_contains($nameLower, 'return')
+            || str_contains($nameLower, 'retur')
             || $id === 'R1'
+            || $id === 'S6'
+            || $id === 'S43'
         ) {
             $returned = true;
         }
+        // Fără AWB de retur: fallback pe fraze de „ajuns la expeditor”.
+        // Cu AWB de retur, returnedToSender e decis doar din livrarea acelui AWB.
         if (
-            str_contains($nameLower, 'returnat la expeditor')
-            || str_contains($nameLower, 'returnat expeditorului')
-            || !empty($row['returnAwbNumber'])
+            $returnAwb === ''
+            && (
+                str_contains($nameLower, 'returnat la expeditor')
+                || str_contains($nameLower, 'returnat expeditorului')
+                || str_contains($nameLower, 'livrat la expeditor')
+                || str_contains($nameLower, 'predat expeditorului')
+                || str_contains($nameLower, 'predat la expeditor')
+            )
         ) {
             $returnedToSender = true;
             $returned = true;
@@ -897,6 +1110,10 @@ function shoptop_fan_normalize_track_row(array $row): array
         }
     }
 
+    if ($returnAwb !== '') {
+        $returned = true;
+    }
+
     // Fan trimite adesea „confirmation” gol încă de la ridicare — livrat doar cu nume confirmare.
     if (!empty($row['confirmation']) && is_array($row['confirmation'])) {
         $confName = trim((string) ($row['confirmation']['name'] ?? ''));
@@ -913,6 +1130,7 @@ function shoptop_fan_normalize_track_row(array $row): array
 
     return [
         'parcelId' => $awb,
+        'returnAwbNumber' => $returnAwb !== '' ? $returnAwb : null,
         'events' => $events,
         'lastDescription' => $lastDescription,
         'outForDelivery' => $outForDelivery,

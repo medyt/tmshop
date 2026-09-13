@@ -171,6 +171,9 @@ function parseOrder(value: unknown): Order | null {
   if (record.deliveryCarrier === 'dpd' || record.deliveryCarrier === 'fan-courier') {
     order.deliveryCarrier = record.deliveryCarrier
   }
+  if (record.deliveryMethod === 'pickup' || record.deliveryMethod === 'courier') {
+    order.deliveryMethod = record.deliveryMethod
+  }
   if (typeof record.courierStatus === 'string' && record.courierStatus.trim()) {
     order.courierStatus = record.courierStatus.trim()
   }
@@ -1097,14 +1100,16 @@ export type UpdateOrderCustomerPayload = {
   companyName?: string
   companyCui?: string
   companyRegCom?: string
-  shipCounty: string
-  shipCountyName: string
-  shipCity: string
-  shipStreet: string
-  shipStreetNumber: string
+  /** courier | pickup — opțional; dacă lipsește, se păstrează metoda existentă */
+  deliveryMethod?: import('../types/order').DeliveryMethod
+  shipCounty?: string
+  shipCountyName?: string
+  shipCity?: string
+  shipStreet?: string
+  shipStreetNumber?: string
   shipAddressExtra?: string
   shipPostalCode?: string
-  dpdSiteId: number
+  dpdSiteId?: number
 }
 
 export async function updateOrderCustomer(

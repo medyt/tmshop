@@ -5,6 +5,7 @@ import {
   isVirtualProduct,
 } from '../../lib/shopCatalog'
 import { shippingCost } from '../../lib/shopShipping'
+import { SITE_LEGAL } from '../../lib/siteLegal'
 import {
   customerNotesWithoutCarrier,
   getDeliveryCarrierLabel,
@@ -38,7 +39,13 @@ import {
   resolveLocality,
 } from '../../lib/roLocalities'
 import { isValidRoPhone, normalizeRoPhone, sanitizeRoPhoneInput } from '../../lib/roPhone'
-import type { BillingType, Order, OrderStatus, OrderTracking } from '../../types/order'
+import type {
+  BillingType,
+  DeliveryMethod,
+  Order,
+  OrderStatus,
+  OrderTracking,
+} from '../../types/order'
 import type { Product } from '../../types/product'
 import { ConfirmModal } from './ConfirmModal'
 import { OrderStatusBadge } from './OrdersTable'
@@ -62,6 +69,7 @@ type CustomerForm = {
   companyName: string
   companyCui: string
   companyRegCom: string
+  deliveryMethod: DeliveryMethod
   shipCounty: string
   shipCity: string
   shipStreet: string
@@ -72,6 +80,7 @@ type CustomerForm = {
 }
 
 function formFromOrder(order: Order): CustomerForm {
+  const isPickup = order.deliveryMethod === 'pickup'
   let shipCounty = order.shipCounty ?? ''
   let shipCity = order.shipCity ?? ''
   let shipStreet = order.shipStreet ?? ''
@@ -79,8 +88,8 @@ function formFromOrder(order: Order): CustomerForm {
   let shipAddressExtra = order.shipAddressExtra ?? ''
   let shipPostalCode = order.shipPostalCode ?? ''
 
-  // Comenzi vechi: încearcă extragerea din adresa pe linii.
-  if (!shipCity || !shipStreet) {
+  // Comenzi vechi: încearcă extragerea din adresa pe linii (nu pentru ridicare).
+  if (!isPickup && (!shipCity || !shipStreet)) {
     const lines = order.customerAddress
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -131,6 +140,7 @@ function formFromOrder(order: Order): CustomerForm {
     companyName: order.companyName ?? '',
     companyCui: order.companyCui ?? '',
     companyRegCom: order.companyRegCom ?? '',
+    deliveryMethod: isPickup ? 'pickup' : 'courier',
     shipCounty,
     shipCity,
     shipStreet,
@@ -246,8 +256,10 @@ export function OrderEditModal({
     () => lines.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0),
     [lines],
   )
-  const shipping = shippingCost(itemsSubtotal)
+  const isPickup = form.deliveryMethod === 'pickup'
+  const shipping = isPickup ? 0 : shippingCost(itemsSubtotal)
   const draftTotal = Math.round((itemsSubtotal + shipping) * 100) / 100
+  const canChangeDeliveryMethod = !order.awbNumber && !itemsLocked
 
   const handleAddProduct = (product: Product) => {
     if (itemsLocked || busy) return
@@ -478,16 +490,15 @@ export function OrderEditModal({
       setError('Telefonul trebuie să aibă exact 10 cifre și să înceapă cu 0.')
       return
     }
-    if (
-      !form.shipCounty.trim() ||
-      !form.shipCity.trim()
-    ) {
-      setError('Alege județul și localitatea.')
-      return
-    }
-    if (!form.shipStreet.trim() || !form.shipStreetNumber.trim()) {
-      setError('Strada și numărul sunt obligatorii.')
-      return
+    if (!isPickup) {
+      if (!form.shipCounty.trim() || !form.shipCity.trim()) {
+        setError('Alege județul și localitatea.')
+        return
+      }
+      if (!form.shipStreet.trim() || !form.shipStreetNumber.trim()) {
+        setError('Strada și numărul sunt obligatorii.')
+        return
+      }
     }
 
     setBusyLocal(true)
@@ -502,15 +513,21 @@ export function OrderEditModal({
       companyName: form.companyName.trim() || undefined,
       companyCui: form.companyCui.trim() || undefined,
       companyRegCom: form.companyRegCom.trim() || undefined,
-      shipCounty: form.shipCounty.trim(),
-      shipCountyName: getRoCountyName(form.shipCounty),
-      shipCity: form.shipCity.trim(),
-      shipStreet: form.shipStreet.trim(),
-      shipStreetNumber: form.shipStreetNumber.trim(),
-      shipAddressExtra: form.shipAddressExtra.trim() || undefined,
-      shipPostalCode: form.shipPostalCode.trim() || undefined,
-      dpdSiteId:
-        typeof form.dpdSiteId === 'number' && form.dpdSiteId > 0
+      deliveryMethod: form.deliveryMethod,
+      shipCounty: isPickup ? undefined : form.shipCounty.trim(),
+      shipCountyName: isPickup ? undefined : getRoCountyName(form.shipCounty),
+      shipCity: isPickup ? undefined : form.shipCity.trim(),
+      shipStreet: isPickup ? undefined : form.shipStreet.trim(),
+      shipStreetNumber: isPickup ? undefined : form.shipStreetNumber.trim(),
+      shipAddressExtra: isPickup
+        ? undefined
+        : form.shipAddressExtra.trim() || undefined,
+      shipPostalCode: isPickup
+        ? undefined
+        : form.shipPostalCode.trim() || undefined,
+      dpdSiteId: isPickup
+        ? 0
+        : typeof form.dpdSiteId === 'number' && form.dpdSiteId > 0
           ? form.dpdSiteId
           : 0,
     })
@@ -853,7 +870,18 @@ export function OrderEditModal({
               </div>
 
               <div className="order-edit__awb">
-                {order.awbNumber ? (
+                {isPickup ? (
+                  <>
+                    <p>
+                      <strong>Ridicare personală</strong>
+                    </p>
+                    <p className="muted small">
+                      Fără AWB / curier. Clientul ridică de la sediu (
+                      {SITE_LEGAL.operatorAddress}). Poți trece statusul manual
+                      (ex. În procesare → Livrată) după predare.
+                    </p>
+                  </>
+                ) : order.awbNumber ? (
                   <>
                     <p>
                       <strong>AWB:</strong> {order.awbNumber}
@@ -1099,6 +1127,35 @@ export function OrderEditModal({
                 </label>
 
                 <fieldset className="order-edit__billing">
+                  <legend>Metodă livrare</legend>
+                  <label className="order-edit__radio">
+                    <input
+                      type="radio"
+                      name="editDeliveryMethod"
+                      checked={form.deliveryMethod === 'courier'}
+                      onChange={() => updateForm('deliveryMethod', 'courier')}
+                      disabled={busy || !canChangeDeliveryMethod}
+                    />
+                    Curier (cu transport)
+                  </label>
+                  <label className="order-edit__radio">
+                    <input
+                      type="radio"
+                      name="editDeliveryMethod"
+                      checked={form.deliveryMethod === 'pickup'}
+                      onChange={() => updateForm('deliveryMethod', 'pickup')}
+                      disabled={busy || !canChangeDeliveryMethod}
+                    />
+                    Ridicare personală (fără transport)
+                  </label>
+                </fieldset>
+                {!canChangeDeliveryMethod && order.awbNumber ? (
+                  <p className="muted small">
+                    Metoda de livrare nu se poate schimba după emiterea AWB.
+                  </p>
+                ) : null}
+
+                <fieldset className="order-edit__billing">
                   <legend>Facturare</legend>
                   <label className="order-edit__radio">
                     <input
@@ -1155,6 +1212,13 @@ export function OrderEditModal({
                   </>
                 ) : null}
 
+                {isPickup ? (
+                  <p className="muted small">
+                    Ridicare de la sediu: {SITE_LEGAL.operatorAddress}. Nu e
+                    nevoie de adresă de livrare.
+                  </p>
+                ) : (
+                  <>
                 <label className="field">
                   <span>Județ (DPD)</span>
                   <select
@@ -1289,6 +1353,8 @@ export function OrderEditModal({
                     disabled={busy}
                   />
                 </label>
+                  </>
+                )}
                 <label className="field">
                   <span>Observații</span>
                   <textarea
@@ -1311,7 +1377,7 @@ export function OrderEditModal({
                 <button
                   type="button"
                   className="btn primary"
-                  disabled={busy || !nomenReady}
+                  disabled={busy || (!isPickup && !nomenReady)}
                   onClick={handleSaveCustomer}
                 >
                   Salvează datele clientului
@@ -1519,9 +1585,11 @@ export function OrderEditModal({
                       colSpan={itemsLocked ? 3 : 4}
                       className="order-edit__total-label"
                     >
-                      Transport
+                      {isPickup ? 'Transport (ridicare)' : 'Transport'}
                     </td>
-                    <td className="cell-nowrap">{formatRon(shipping)}</td>
+                    <td className="cell-nowrap">
+                      {isPickup ? '0,00 RON' : formatRon(shipping)}
+                    </td>
                   </tr>
                   <tr>
                     <td
@@ -1538,7 +1606,7 @@ export function OrderEditModal({
               </table>
             )}
 
-            {order.serviceMarginBreakdown ? (
+            {order.serviceMarginBreakdown && !isPickup ? (
               <div className="order-edit__economics">
                 <h3 className="order-edit__section-title">Economics livrare</h3>
                 <table className="data-table order-edit__economics-table">

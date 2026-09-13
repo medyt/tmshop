@@ -136,18 +136,16 @@ export function ReturnsInfoPage() {
                   <strong>Destinatar:</strong> {SITE_LEGAL.operatorName} - retur
                   comanda [numărul comenzii]
                 </li>
-                {SITE_LEGAL.returnPhone ? (
-                  <li>
-                    <strong>Telefon destinatar:</strong> {SITE_LEGAL.returnPhone}
-                  </li>
-                ) : null}
+                <li>
+                  <strong>Telefon destinatar:</strong> {SITE_LEGAL.returnPhone}
+                </li>
                 <li>
                   <strong>Adresă:</strong> {SITE_LEGAL.returnAddress}
                 </li>
               </ul>
               <p>
-                Telefonul destinatar, adresa exactă și numărul comenzii îți sunt
-                confirmate pe email, după validarea cererii.
+                Adresa exactă și numărul comenzii îți sunt confirmate și pe
+                email, după validarea cererii.
               </p>
             </>
           ),

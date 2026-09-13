@@ -92,25 +92,42 @@ const PAYMENT_TABS: Array<{ id: PaymentFilter; label: string }> = [
   { id: 'cod', label: 'Ramburs' },
 ]
 
-type CarrierFilter = 'all' | DeliveryCarrierId
+type CarrierFilter = 'all' | DeliveryCarrierId | 'pickup'
 
 const CARRIER_TABS: Array<{ id: CarrierFilter; label: string }> = [
-  { id: 'all', label: 'Toți curierii' },
+  { id: 'all', label: 'Toți' },
   { id: 'fan-courier', label: 'Fan Courier' },
   { id: 'dpd', label: 'DPD' },
+  { id: 'pickup', label: 'Pickup' },
 ]
 
 function isCarrierFilter(value: string): value is CarrierFilter {
-  return value === 'all' || value === 'fan-courier' || value === 'dpd'
+  return (
+    value === 'all' ||
+    value === 'fan-courier' ||
+    value === 'dpd' ||
+    value === 'pickup'
+  )
 }
 
 function orderPayment(order: Order): PaymentMethod {
   return order.paymentMethod === 'card' ? 'card' : 'cod'
 }
 
-/** Comenzi fără AWB apar pe ambele taburi; după AWB doar pe curierul salvat (legacy = DPD). */
+function isPickupOrder(order: Order): boolean {
+  return order.deliveryMethod === 'pickup'
+}
+
+/**
+ * Filtru livrare:
+ * - all: toate
+ * - pickup: doar ridicare personală
+ * - fan/dpd: comenzi curier (fără pickup); fără AWB apar pe ambele; cu AWB doar pe curierul salvat
+ */
 function orderMatchesCarrier(order: Order, carrier: CarrierFilter): boolean {
   if (carrier === 'all') return true
+  if (carrier === 'pickup') return isPickupOrder(order)
+  if (isPickupOrder(order)) return false
   if (!order.awbNumber) return true
   const locked = order.deliveryCarrier ?? 'dpd'
   return locked === carrier
@@ -403,10 +420,12 @@ export function AdminOrdersPage({ onStockChanged }: Props) {
       all: scoped.length,
       dpd: 0,
       'fan-courier': 0,
+      pickup: 0,
     }
     for (const order of scoped) {
       if (orderMatchesCarrier(order, 'dpd')) counts.dpd += 1
       if (orderMatchesCarrier(order, 'fan-courier')) counts['fan-courier'] += 1
+      if (orderMatchesCarrier(order, 'pickup')) counts.pickup += 1
     }
     return counts
   }, [ordersByDate, statusFilter, paymentFilter])
@@ -427,7 +446,7 @@ export function AdminOrdersPage({ onStockChanged }: Props) {
     PAYMENT_TABS.find((t) => t.id === paymentFilter)?.label ?? 'Toate'
   const activeCarrierLabel =
     carrierFilter === 'all'
-      ? 'curier'
+      ? 'livrare'
       : (CARRIER_TABS.find((t) => t.id === carrierFilter)?.label ?? 'DPD')
 
   const setFilter = (next: OrderStatusFilter) => {
@@ -624,8 +643,12 @@ export function AdminOrdersPage({ onStockChanged }: Props) {
 
   const handleBulkIssueAwb = useCallback(() => {
     if (bulkBusy || checkedIds.length === 0) return
-    if (carrierFilter === 'all') {
-      setError('Alege curierul (Fan Courier sau DPD) din filtre ca să emiți AWB.')
+    if (carrierFilter === 'all' || carrierFilter === 'pickup') {
+      setError(
+        carrierFilter === 'pickup'
+          ? 'Comenzile Pickup nu au AWB. Alege Fan Courier sau DPD pentru emitere.'
+          : 'Alege curierul (Fan Courier sau DPD) din filtre ca să emiți AWB.',
+      )
       return
     }
     const ids = [...checkedIds]
@@ -879,9 +902,9 @@ export function AdminOrdersPage({ onStockChanged }: Props) {
               </div>
 
               <div className="ao-filter">
-                <span className="ao-filter__label">Curier</span>
+                <span className="ao-filter__label">Livrare</span>
                 <div className="ao-filter__body">
-                  <div className="ao-seg" role="tablist" aria-label="Filtru curier">
+                  <div className="ao-seg" role="tablist" aria-label="Filtru livrare">
                     {CARRIER_TABS.map((tab) => {
                       const active = carrierFilter === tab.id
                       return (
@@ -1038,7 +1061,11 @@ export function AdminOrdersPage({ onStockChanged }: Props) {
       {selectedOrder ? (
         <OrderEditModal
           order={selectedOrder}
-          preferredCarrier={carrierFilter === 'all' ? 'fan-courier' : carrierFilter}
+          preferredCarrier={
+            carrierFilter === 'fan-courier' || carrierFilter === 'dpd'
+              ? carrierFilter
+              : 'fan-courier'
+          }
           products={products}
           productsLoading={productsLoading}
           onClose={() => setSelectedId(null)}

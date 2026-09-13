@@ -105,6 +105,9 @@ function formatCourierDate(value: string | undefined): string | null {
 
 /** AWB în format „număr · curier” + status normalizat (ridicat / în livrare / refuzat…). */
 function AwbCell({ order }: { order: Order }) {
+  if (order.deliveryMethod === 'pickup') {
+    return <span className="ao-awb__none">Ridicare personală</span>
+  }
   const status = describeAwbStatus(order)
   if (!order.awbNumber || !status) {
     return <span className="ao-awb__none">Fără AWB</span>
@@ -280,6 +283,7 @@ function SortButton({
 
 function canIssueAwb(order: Order): boolean {
   return (
+    order.deliveryMethod !== 'pickup' &&
     (order.status === 'new' || order.status === 'confirmed') &&
     !order.awbNumber
   )

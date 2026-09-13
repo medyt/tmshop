@@ -2,8 +2,8 @@ export const SITE_LEGAL = {
   brandName: 'ShopTop',
   siteUrl: 'https://shop-top.ro',
   contactEmail: 'tmshop366@gmail.com',
-  /** Telefon public al magazinului (gol = contact doar pe email). */
-  contactPhone: '',
+  /** Telefon public al magazinului (afișat în contact, footer, AWB și JSON-LD). */
+  contactPhone: '+40 725 026 381',
   operatorName: 'TM SHOP SRL',
   operatorCui: '54732560',
   operatorRegCom: 'J2026033223007',
@@ -14,8 +14,8 @@ export const SITE_LEGAL = {
   /** Adresa de retur (aceeași ca expeditorul de pe AWB). */
   returnAddress:
     'Sat Alexandru cel Bun, str. Iaz nr. 1, județul Iași, cod poștal 707591, România',
-  /** Telefon destinatar retur pe site (gol = trimis doar pe email după validare). */
-  returnPhone: '',
+  /** Telefon destinatar pe coletul de retur. */
+  returnPhone: '0725 026 381',
   supportHours: 'Luni–Vineri, 09:00–17:00',
   shippingFlatRateRon: 19.99,
   /** Livrare gratuită de la acest subtotal. 0 = dezactivat (transportul rămâne tariful fix). */

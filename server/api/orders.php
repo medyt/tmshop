@@ -29,6 +29,7 @@ function shoptop_orders_select_sql(PDO $pdo): string
         'ship_street_number', 'ship_address_extra', 'ship_postal_code', 'dpd_site_id',
         'dpd_parcel_id',
         'delivery_carrier',
+        'delivery_method',
         'stock_applied',
         'courier_status', 'courier_status_at',
         'return_received',
@@ -378,6 +379,40 @@ function shoptop_normalize_delivery_carrier(mixed $value): ?string
 }
 
 /**
+ * Normalizează metoda de livrare: courier | pickup.
+ */
+function shoptop_normalize_delivery_method(mixed $value): string
+{
+    $raw = strtolower(trim((string) ($value ?? '')));
+    if ($raw === 'pickup' || $raw === 'ridicare' || $raw === 'personal') {
+        return 'pickup';
+    }
+    return 'courier';
+}
+
+/**
+ * @param array<string, mixed> $order row DB sau payload API
+ */
+function shoptop_order_is_pickup(array $order): bool
+{
+    if (array_key_exists('delivery_method', $order)) {
+        return shoptop_normalize_delivery_method($order['delivery_method']) === 'pickup';
+    }
+    if (array_key_exists('deliveryMethod', $order)) {
+        return shoptop_normalize_delivery_method($order['deliveryMethod']) === 'pickup';
+    }
+    return false;
+}
+
+/**
+ * Adresa afișată pe comenzi cu ridicare personală (sediu).
+ */
+function shoptop_pickup_address_text(): string
+{
+    return "Ridicare personală de la sediu\nStr. Stejarului nr. 15, sat Tamaseni, județul Neamț, cod poștal 617465";
+}
+
+/**
  * Carrier efectiv al unei comenzi (coloană → notes → dacă are AWB: dpd legacy).
  *
  * @param array<string, mixed> $order
@@ -480,6 +515,13 @@ function shoptop_order_row_to_response(
     $carrier = shoptop_order_delivery_carrier($order);
     if ($carrier !== null) {
         $payload['deliveryCarrier'] = $carrier;
+    }
+    if (array_key_exists('delivery_method', $order) || array_key_exists('deliveryMethod', $order)) {
+        $payload['deliveryMethod'] = shoptop_normalize_delivery_method(
+            $order['delivery_method'] ?? $order['deliveryMethod'] ?? 'courier'
+        );
+    } else {
+        $payload['deliveryMethod'] = 'courier';
     }
     if (!empty($order['dpd_site_id'])) {
         $payload['dpdSiteId'] = (int) $order['dpd_site_id'];
@@ -666,6 +708,12 @@ function shoptop_issue_awb(PDO $pdo, string $orderId, ?string $requestedCarrier 
         if ((string) ($order['status'] ?? '') === 'returned') {
             $pdo->rollBack();
             throw new RuntimeException('Nu poți genera AWB pentru o comandă returnată.');
+        }
+        if (shoptop_order_is_pickup($order)) {
+            $pdo->rollBack();
+            throw new RuntimeException(
+                'Comanda e cu ridicare personală — nu se generează AWB.'
+            );
         }
         $payMethod = (string) ($order['payment_method'] ?? 'cod');
         $payStatus = (string) ($order['payment_status'] ?? 'pending');
@@ -1338,11 +1386,35 @@ function shoptop_update_order_customer(PDO $pdo, string $orderId, array $body): 
     if (!shoptop_validate_ro_phone($customerPhone)) {
         throw new RuntimeException('Telefonul trebuie să aibă exact 10 cifre și să înceapă cu 0.');
     }
-    if ($city === '' || $street === '' || $streetNumber === '') {
-        throw new RuntimeException('Localitatea, strada și numărul sunt obligatorii.');
+
+    $stmt = $pdo->prepare(
+        'SELECT ' . shoptop_orders_select_sql($pdo) . ' FROM orders WHERE id = :id LIMIT 1'
+    );
+    $stmt->execute(['id' => $orderId]);
+    $existing = $stmt->fetch();
+    if (!$existing) {
+        throw new RuntimeException('Comanda nu a fost gasita.');
     }
-    if ($county === '' && $countyName === '') {
-        throw new RuntimeException('Județul este obligatoriu.');
+
+    $hasMethodCol = shoptop_column_exists($pdo, 'orders', 'delivery_method');
+    $currentMethod = $hasMethodCol
+        ? shoptop_normalize_delivery_method($existing['delivery_method'] ?? 'courier')
+        : 'courier';
+    $deliveryMethod = $currentMethod;
+    if (array_key_exists('deliveryMethod', $body) || array_key_exists('delivery_method', $body)) {
+        $deliveryMethod = shoptop_normalize_delivery_method(
+            $body['deliveryMethod'] ?? $body['delivery_method'] ?? $currentMethod
+        );
+    }
+    $isPickup = $deliveryMethod === 'pickup';
+
+    if (!$isPickup) {
+        if ($city === '' || $street === '' || $streetNumber === '') {
+            throw new RuntimeException('Localitatea, strada și numărul sunt obligatorii.');
+        }
+        if ($county === '' && $countyName === '') {
+            throw new RuntimeException('Județul este obligatoriu.');
+        }
     }
     // dpdSiteId e opțional: conturile fără acces location/site folosesc siteName la AWB.
     if ($billingType === 'company') {
@@ -1355,25 +1427,31 @@ function shoptop_update_order_customer(PDO $pdo, string $orderId, array $body): 
         $companyCui = shoptop_normalize_ro_cui($companyCuiRaw);
     }
 
-    $streetLine = trim(
-        ($street !== '' ? 'Str. ' . $street : '')
-        . ($streetNumber !== '' ? ' nr. ' . $streetNumber : '')
-    );
-    $line1 = trim($streetLine . ($addressExtra !== '' ? ', ' . $addressExtra : ''), " ,");
-    $line2 = trim(
-        $city
-        . ($countyName !== '' ? ', jud. ' . $countyName : ($county !== '' ? ', jud. ' . $county : '')),
-        " ,"
-    );
-    $line3 = $postalCode !== '' ? 'Cod postal: ' . $postalCode : '';
-    $customerAddress = trim(implode("\n", array_filter([$line1, $line2, $line3], static function ($v) {
-        return $v !== '';
-    })));
-
-    $stmt = $pdo->prepare('SELECT id FROM orders WHERE id = :id LIMIT 1');
-    $stmt->execute(['id' => $orderId]);
-    if (!$stmt->fetch()) {
-        throw new RuntimeException('Comanda nu a fost gasita.');
+    if ($isPickup) {
+        $customerAddress = shoptop_pickup_address_text();
+        $county = '';
+        $countyName = '';
+        $city = '';
+        $street = '';
+        $streetNumber = '';
+        $addressExtra = '';
+        $postalCode = '';
+        $dpdSiteId = 0;
+    } else {
+        $streetLine = trim(
+            ($street !== '' ? 'Str. ' . $street : '')
+            . ($streetNumber !== '' ? ' nr. ' . $streetNumber : '')
+        );
+        $line1 = trim($streetLine . ($addressExtra !== '' ? ', ' . $addressExtra : ''), " ,");
+        $line2 = trim(
+            $city
+            . ($countyName !== '' ? ', jud. ' . $countyName : ($county !== '' ? ', jud. ' . $county : '')),
+            " ,"
+        );
+        $line3 = $postalCode !== '' ? 'Cod postal: ' . $postalCode : '';
+        $customerAddress = trim(implode("\n", array_filter([$line1, $line2, $line3], static function ($v) {
+            return $v !== '';
+        })));
     }
 
     $hasShip = shoptop_column_exists($pdo, 'orders', 'ship_city');
@@ -1406,15 +1484,15 @@ function shoptop_update_order_customer(PDO $pdo, string $orderId, array $body): 
         $sets[] = 'ship_postal_code = :ship_postal_code';
         $params['ship_county'] = $county !== '' ? $county : null;
         $params['ship_county_name'] = $countyName !== '' ? $countyName : null;
-        $params['ship_city'] = $city;
-        $params['ship_street'] = $street;
-        $params['ship_street_number'] = $streetNumber;
+        $params['ship_city'] = $city !== '' ? $city : null;
+        $params['ship_street'] = $street !== '' ? $street : null;
+        $params['ship_street_number'] = $streetNumber !== '' ? $streetNumber : null;
         $params['ship_address_extra'] = $addressExtra !== '' ? $addressExtra : null;
         $params['ship_postal_code'] = $postalCode !== '' ? $postalCode : null;
     }
     if ($hasDpdSite) {
         $sets[] = 'dpd_site_id = :dpd_site_id';
-        $params['dpd_site_id'] = $dpdSiteId;
+        $params['dpd_site_id'] = $dpdSiteId > 0 ? $dpdSiteId : null;
     }
     if ($hasBilling) {
         $sets[] = 'billing_type = :billing_type';
@@ -1427,6 +1505,27 @@ function shoptop_update_order_customer(PDO $pdo, string $orderId, array $body): 
         $params['company_reg_com'] = $billingType === 'company' && $companyRegCom !== ''
             ? $companyRegCom
             : null;
+    }
+    if ($hasMethodCol) {
+        $sets[] = 'delivery_method = :delivery_method';
+        $params['delivery_method'] = $deliveryMethod;
+    }
+
+    // Recalculează totalul dacă se schimbă metoda (cu/fără transport).
+    if ($hasMethodCol && $deliveryMethod !== $currentMethod) {
+        if (!empty($existing['awb_number'])) {
+            throw new RuntimeException(
+                'Nu poți schimba metoda de livrare după ce a fost emis AWB.'
+            );
+        }
+        $itemsSumStmt = $pdo->prepare(
+            'SELECT COALESCE(SUM(line_total), 0) AS items_sum FROM order_items WHERE order_id = :id'
+        );
+        $itemsSumStmt->execute(['id' => $orderId]);
+        $itemsSum = (float) ($itemsSumStmt->fetchColumn() ?: 0);
+        $shipping = $isPickup ? 0.0 : shoptop_shipping_cost_for_subtotal($itemsSum);
+        $sets[] = 'total_amount = :total_amount';
+        $params['total_amount'] = round($itemsSum + $shipping, 2);
     }
 
     $update = $pdo->prepare(
@@ -1498,7 +1597,9 @@ function shoptop_update_order_items(PDO $pdo, string $orderId, array $itemsInput
 
     try {
         $stmt = $pdo->prepare(
-            'SELECT id, status, stock_applied, invoice_series, invoice_number
+            'SELECT id, status, stock_applied, invoice_series, invoice_number'
+            . (shoptop_column_exists($pdo, 'orders', 'delivery_method') ? ', delivery_method' : '')
+            . '
              FROM orders
              WHERE id = :id
              LIMIT 1
@@ -1593,7 +1694,9 @@ function shoptop_update_order_items(PDO $pdo, string $orderId, array $itemsInput
             ];
         }
 
-        $totalAmount = round($itemsSubtotal + shoptop_shipping_cost_for_subtotal($itemsSubtotal), 2);
+        $isPickup = shoptop_order_is_pickup($order);
+        $shipping = $isPickup ? 0.0 : shoptop_shipping_cost_for_subtotal($itemsSubtotal);
+        $totalAmount = round($itemsSubtotal + $shipping, 2);
 
         $itemStmt = $pdo->prepare(
             'INSERT INTO order_items (
@@ -1881,9 +1984,6 @@ function shoptop_sync_order_from_dpd_track(PDO $pdo, string $orderId, array $tra
         return;
     }
     $returnReceived = $hasReturnReceived && !empty($row['return_received']);
-    if ($current === 'returned' && $returnReceived) {
-        return;
-    }
 
     $courierLabel = trim((string) ($track['lastDescription'] ?? ''));
     if ($courierLabel === '' && !empty($track['returnedToSender'])) {
@@ -1915,7 +2015,7 @@ function shoptop_sync_order_from_dpd_track(PDO $pdo, string $orderId, array $tra
         ]);
     }
 
-    // Colet reîntors la expeditor (cod 124) — marchează „returnat la mine”.
+    // Colet reîntors la expeditor (DPD 124 / Fan AWB retur livrat) — „Returnate”.
     if (
         !empty($track['returnedToSender'])
         && shoptop_column_exists($pdo, 'orders', 'return_received')
@@ -1924,6 +2024,24 @@ function shoptop_sync_order_from_dpd_track(PDO $pdo, string $orderId, array $tra
             'UPDATE orders SET return_received = 1 WHERE id = :id AND return_received = 0'
         );
         $flag->execute(['id' => $orderId]);
+        $returnReceived = true;
+    } elseif (
+        // Retur în curs (refuz / AWB retur încă pe drum) → ține în Refuzate.
+        empty($track['returnedToSender'])
+        && !empty($track['returned'])
+        && $returnReceived
+        && shoptop_column_exists($pdo, 'orders', 'return_received')
+    ) {
+        $flag = $pdo->prepare(
+            'UPDATE orders SET return_received = 0 WHERE id = :id AND return_received = 1'
+        );
+        $flag->execute(['id' => $orderId]);
+        $returnReceived = false;
+    }
+
+    // După demotare/confirmare: Returnate finale nu mai schimbă statusul din sync.
+    if ($current === 'returned' && $returnReceived) {
+        return;
     }
 
     // Refuz temporar urmat de re-livrare: DPD poate trece 123 → 12 → -14.
@@ -2938,6 +3056,18 @@ if ($method === 'POST') {
         $paymentMethod = 'cod';
     }
 
+    $isAdminUser = shoptop_is_admin_user();
+    $deliveryMethod = 'courier';
+    if ($isAdminUser && (array_key_exists('deliveryMethod', $body) || array_key_exists('delivery_method', $body))) {
+        $deliveryMethod = shoptop_normalize_delivery_method(
+            $body['deliveryMethod'] ?? $body['delivery_method'] ?? 'courier'
+        );
+    }
+    $isPickup = $deliveryMethod === 'pickup';
+    if ($isPickup && !$isAdminUser) {
+        shoptop_json_error('Ridicarea personală este disponibilă doar din admin.', 403);
+    }
+
     $billingType = trim((string) ($customer['billingType'] ?? 'person'));
     if ($billingType !== 'company') {
         $billingType = 'person';
@@ -2956,7 +3086,20 @@ if ($method === 'POST') {
         $companyCui = shoptop_normalize_ro_cui($companyCuiRaw);
     }
 
-    if (
+    if ($isPickup) {
+        if ($customerName === '' || $customerPhone === '') {
+            shoptop_json_error('Numele și telefonul sunt obligatorii.', 400);
+        }
+        $customerAddress = shoptop_pickup_address_text();
+        $county = '';
+        $countyName = '';
+        $city = '';
+        $street = '';
+        $streetNumber = '';
+        $addressExtra = '';
+        $postalCode = '';
+        $dpdSiteId = 0;
+    } elseif (
         $customerName === ''
         || $customerPhone === ''
         || $city === ''
@@ -2977,7 +3120,7 @@ if ($method === 'POST') {
         );
     }
 
-    if ($county === '' && $countyName === '') {
+    if (!$isPickup && $county === '' && $countyName === '') {
         shoptop_json_error('Judetul este obligatoriu.', 400);
     }
 
@@ -3108,12 +3251,13 @@ if ($method === 'POST') {
             ];
         }
 
-        $totalAmount += shoptop_shipping_cost_for_subtotal($totalAmount);
+        $totalAmount += $isPickup ? 0.0 : shoptop_shipping_cost_for_subtotal($totalAmount);
 
         $orderId = shoptop_order_id($pdo);
         $accessToken = shoptop_order_access_token();
         $hasBilling = shoptop_column_exists($pdo, 'orders', 'billing_type');
         $hasShip = shoptop_column_exists($pdo, 'orders', 'ship_city');
+        $hasMethodCol = shoptop_column_exists($pdo, 'orders', 'delivery_method');
 
         $shipCols = '';
         $shipVals = '';
@@ -3138,16 +3282,20 @@ if ($method === 'POST') {
             }
         }
 
+        $methodCols = $hasMethodCol ? ', delivery_method' : '';
+        $methodVals = $hasMethodCol ? ', :delivery_method' : '';
+        $methodParams = $hasMethodCol ? ['delivery_method' => $deliveryMethod] : [];
+
         if ($hasBilling) {
             $orderStmt = $pdo->prepare(
                 'INSERT INTO orders (
                     id, access_token, user_id, customer_name, customer_email, customer_phone,
                     customer_address' . $shipCols . ', customer_notes, billing_type, company_name, company_cui, company_reg_com,
-                    total_amount, status, payment_method, payment_status
+                    total_amount, status, payment_method, payment_status' . $methodCols . '
                 ) VALUES (
                     :id, :access_token, :user_id, :customer_name, :customer_email, :customer_phone,
                     :customer_address' . $shipVals . ', :customer_notes, :billing_type, :company_name, :company_cui, :company_reg_com,
-                    :total_amount, :status, :payment_method, :payment_status
+                    :total_amount, :status, :payment_method, :payment_status' . $methodVals . '
                 )'
             );
             $orderStmt->execute(array_merge([
@@ -3169,15 +3317,15 @@ if ($method === 'POST') {
                 'status' => 'new',
                 'payment_method' => $paymentMethod,
                 'payment_status' => 'pending',
-            ], $shipParams));
+            ], $shipParams, $methodParams));
         } else {
             $orderStmt = $pdo->prepare(
                 'INSERT INTO orders (
                     id, access_token, user_id, customer_name, customer_email, customer_phone,
-                    customer_address' . $shipCols . ', customer_notes, total_amount, status, payment_method, payment_status
+                    customer_address' . $shipCols . ', customer_notes, total_amount, status, payment_method, payment_status' . $methodCols . '
                 ) VALUES (
                     :id, :access_token, :user_id, :customer_name, :customer_email, :customer_phone,
-                    :customer_address' . $shipVals . ', :customer_notes, :total_amount, :status, :payment_method, :payment_status
+                    :customer_address' . $shipVals . ', :customer_notes, :total_amount, :status, :payment_method, :payment_status' . $methodVals . '
                 )'
             );
             $orderStmt->execute(array_merge([
@@ -3193,7 +3341,7 @@ if ($method === 'POST') {
                 'status' => 'new',
                 'payment_method' => $paymentMethod,
                 'payment_status' => 'pending',
-            ], $shipParams));
+            ], $shipParams, $methodParams));
         }
 
         $itemStmt = $pdo->prepare(

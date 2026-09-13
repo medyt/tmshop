@@ -21,8 +21,8 @@ return [
     'operator_name' => 'TM SHOP SRL',
     'return_address' =>
         'Sat Alexandru cel Bun, str. Iaz nr. 1, județul Iași, cod poștal 707591, România',
-    // Telefon destinatar pe coletul de retur (doar în email după validare; nu e public pe site).
-    'return_phone' => '0757 192 613',
+    // Telefon destinatar pe coletul de retur (obligatoriu la curier).
+    'return_phone' => '0725 026 381',
     'shipping_flat_rate' => 19.99,
     // Livrare gratuită de la acest subtotal (RON). 0 = dezactivat (rămâne tariful fix).
     'shipping_free_over' => 0,

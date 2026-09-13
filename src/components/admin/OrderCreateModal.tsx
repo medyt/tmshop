@@ -15,7 +15,8 @@ import {
 import { createOrder } from '../../lib/ordersApi'
 import { clientStockLimit, formatRon } from '../../lib/shopCatalog'
 import { orderTotal, shippingCost } from '../../lib/shopShipping'
-import type { BillingType, Order } from '../../types/order'
+import { SITE_LEGAL } from '../../lib/siteLegal'
+import type { BillingType, DeliveryMethod, Order } from '../../types/order'
 import type { Product } from '../../types/product'
 
 type LineDraft = {
@@ -51,6 +52,7 @@ function emptyForm() {
     companyName: '',
     companyCui: '',
     companyRegCom: '',
+    deliveryMethod: 'courier' as DeliveryMethod,
     shipCounty: '',
     shipCity: '',
     shipStreet: '',
@@ -107,8 +109,11 @@ export function OrderCreateModal({
     () => lines.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0),
     [lines],
   )
-  const shipping = shippingCost(itemsSubtotal)
-  const total = orderTotal(itemsSubtotal)
+  const isPickup = form.deliveryMethod === 'pickup'
+  const shipping = isPickup ? 0 : shippingCost(itemsSubtotal)
+  const total = isPickup
+    ? Math.round(itemsSubtotal * 100) / 100
+    : orderTotal(itemsSubtotal)
 
   useEffect(() => {
     let cancelled = false
@@ -202,13 +207,15 @@ export function OrderCreateModal({
       setError('Telefonul trebuie să aibă exact 10 cifre și să înceapă cu 0.')
       return
     }
-    if (!form.shipCounty.trim() || !form.shipCity.trim()) {
-      setError('Alege județul și localitatea.')
-      return
-    }
-    if (!form.shipStreet.trim() || !form.shipStreetNumber.trim()) {
-      setError('Strada și numărul sunt obligatorii.')
-      return
+    if (!isPickup) {
+      if (!form.shipCounty.trim() || !form.shipCity.trim()) {
+        setError('Alege județul și localitatea.')
+        return
+      }
+      if (!form.shipStreet.trim() || !form.shipStreetNumber.trim()) {
+        setError('Strada și numărul sunt obligatorii.')
+        return
+      }
     }
     if (form.billingType === 'company') {
       if (form.companyName.trim().length < 2) {
@@ -226,7 +233,9 @@ export function OrderCreateModal({
     }
 
     const { firstName, lastName } = splitName(form.customerName)
-    const notesParts = ['Comandă telefonică']
+    const notesParts = isPickup
+      ? ['Comandă telefonică', 'Ridicare personală']
+      : ['Comandă telefonică']
     if (form.customerNotes.trim()) notesParts.push(form.customerNotes.trim())
 
     const customer = toCheckoutApiCustomer({
@@ -234,13 +243,13 @@ export function OrderCreateModal({
       lastName,
       email: form.customerEmail,
       phone: form.customerPhone,
-      county: form.shipCounty,
-      city: form.shipCity,
-      dpdSiteId: form.dpdSiteId,
-      street: form.shipStreet,
-      streetNumber: form.shipStreetNumber,
-      addressExtra: form.shipAddressExtra,
-      postalCode: form.shipPostalCode,
+      county: isPickup ? '' : form.shipCounty,
+      city: isPickup ? '' : form.shipCity,
+      dpdSiteId: isPickup ? undefined : form.dpdSiteId,
+      street: isPickup ? '' : form.shipStreet,
+      streetNumber: isPickup ? '' : form.shipStreetNumber,
+      addressExtra: isPickup ? '' : form.shipAddressExtra,
+      postalCode: isPickup ? '' : form.shipPostalCode,
       notes: notesParts.join(' · '),
       billingType: form.billingType,
       companyName: form.companyName,
@@ -253,6 +262,7 @@ export function OrderCreateModal({
     void createOrder({
       customer,
       paymentMethod: 'cod',
+      deliveryMethod: form.deliveryMethod,
       acceptedTerms: true,
       items: lines.map((line) => ({
         productId: line.productId,
@@ -303,9 +313,13 @@ export function OrderCreateModal({
           </div>
 
           <p className="muted small">
-            Comandă manuală (telefon) — plată ramburs. Județ/localitate din
-            nomenclatorul DPD.
-            {form.shipCounty ? ` Județ: ${getRoCountyName(form.shipCounty)}.` : ''}
+            Comandă manuală (telefon) — plată ramburs.
+            {isPickup
+              ? ' Ridicare personală de la sediu (fără transport).'
+              : ' Județ/localitate din nomenclatorul DPD.'}
+            {!isPickup && form.shipCounty
+              ? ` Județ: ${getRoCountyName(form.shipCounty)}.`
+              : ''}
           </p>
 
           {error ? (
@@ -313,7 +327,7 @@ export function OrderCreateModal({
               {error}
             </p>
           ) : null}
-          {nomenError ? (
+          {!isPickup && nomenError ? (
             <p className="app-status app-status--error" role="alert">
               {nomenError}
             </p>
@@ -322,11 +336,35 @@ export function OrderCreateModal({
           <div className="order-edit__grid">
             <section className="order-edit__card">
               <h3>Client &amp; livrare</h3>
-              {!nomenReady && !nomenError ? (
+              {!isPickup && !nomenReady && !nomenError ? (
                 <p className="muted small">Se încarcă nomenclatorul DPD…</p>
               ) : null}
 
               <div className="order-edit__form">
+                <fieldset className="order-edit__billing">
+                  <legend>Metodă livrare</legend>
+                  <label className="order-edit__radio">
+                    <input
+                      type="radio"
+                      name="createDeliveryMethod"
+                      checked={form.deliveryMethod === 'courier'}
+                      onChange={() => updateForm('deliveryMethod', 'courier')}
+                      disabled={busy}
+                    />
+                    Curier (cu transport)
+                  </label>
+                  <label className="order-edit__radio">
+                    <input
+                      type="radio"
+                      name="createDeliveryMethod"
+                      checked={form.deliveryMethod === 'pickup'}
+                      onChange={() => updateForm('deliveryMethod', 'pickup')}
+                      disabled={busy}
+                    />
+                    Ridicare personală (fără transport)
+                  </label>
+                </fieldset>
+
                 <label className="field">
                   <span>Nume client</span>
                   <input
@@ -427,6 +465,14 @@ export function OrderCreateModal({
                   </>
                 ) : null}
 
+                {isPickup ? (
+                  <p className="muted small">
+                    Clientul ridică coletul de la sediu:{' '}
+                    {SITE_LEGAL.operatorAddress}. Nu se taxează transport și nu
+                    se emite AWB.
+                  </p>
+                ) : (
+                  <>
                 <label className="field">
                   <span>Județ (DPD)</span>
                   <select
@@ -571,6 +617,8 @@ export function OrderCreateModal({
                     disabled={busy}
                   />
                 </label>
+                  </>
+                )}
 
                 <label className="field">
                   <span>Observații (opțional)</span>
@@ -741,10 +789,10 @@ export function OrderCreateModal({
                     </tr>
                     <tr>
                       <td colSpan={3} className="order-edit__total-label">
-                        Transport
+                        {isPickup ? 'Transport (ridicare)' : 'Transport'}
                       </td>
                       <td className="cell-nowrap" colSpan={2}>
-                        {formatRon(shipping)}
+                        {isPickup ? '0,00 RON' : formatRon(shipping)}
                       </td>
                     </tr>
                     <tr>
@@ -774,7 +822,7 @@ export function OrderCreateModal({
               type="button"
               className="btn primary"
               onClick={handleSubmit}
-              disabled={busy || !nomenReady}
+              disabled={busy || (!isPickup && !nomenReady)}
             >
               {busy ? 'Se creează…' : 'Creează comanda'}
             </button>

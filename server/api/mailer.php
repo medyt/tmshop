@@ -483,8 +483,7 @@ function shoptop_return_phone(): string
         return $phone;
     }
 
-    // Fallback pentru emailul de retur (nu e afișat public pe site).
-    return '0757 192 613';
+    return '0725 026 381';
 }
 
 /**

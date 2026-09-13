@@ -44,6 +44,9 @@ export type PaymentStatus = 'pending' | 'paid'
 
 export type BillingType = 'person' | 'company'
 
+/** Livrare: curier (default) sau ridicare personală de la sediu (fără transport). */
+export type DeliveryMethod = 'courier' | 'pickup'
+
 export type Order = {
   id: string
   customerName: string
@@ -61,6 +64,8 @@ export type Order = {
   shipPostalCode?: string
   /** siteId DPD salvat la checkout / editare */
   dpdSiteId?: number
+  /** courier = livrare curier; pickup = ridicare personală (fără transport/AWB) */
+  deliveryMethod?: DeliveryMethod
   /** Curier AWB: dpd | fan-courier (setat la emitere) */
   deliveryCarrier?: 'dpd' | 'fan-courier'
   billingType?: BillingType
@@ -158,6 +163,11 @@ export type CheckoutApiCustomer = CheckoutCustomer & {
 export type CheckoutPayload = {
   customer: CheckoutApiCustomer
   paymentMethod?: PaymentMethod
+  /**
+   * Doar admin: ridicare personală de la sediu (fără cost transport).
+   * Checkout-ul public rămâne mereu `courier`.
+   */
+  deliveryMethod?: DeliveryMethod
   /** Linie fixă „Produs cadou” (+15 RON), doar dacă e bifat la checkout. */
   giftAddon?: boolean
   /** Extra opțiuni checkout (livrare prioritată, deschidere colet, garanție, cadou). */
