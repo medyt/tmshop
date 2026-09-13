@@ -3,8 +3,17 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/lib.php';
+require_once __DIR__ . '/return_shipping.php';
 
 shoptop_send_cors();
+
+/** Coloanele AWB retur (doar dacă migrarea a fost rulată), de lipit după created_at. */
+function shoptop_return_awb_select_extra(PDO $pdo): string
+{
+    return shoptop_return_awb_columns_available($pdo)
+        ? ', return_awb_number, return_awb_carrier, return_awb_parcel_id, return_awb_issued_at'
+        : '';
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(204);
@@ -97,6 +106,9 @@ function shoptop_return_row_to_response(array $row, ?array $orderInfo = null): a
         'orderExists' => false,
         'orderTotalAmount' => null,
         'orderStatus' => null,
+        'returnAwbNumber' => (string) ($row['return_awb_number'] ?? ''),
+        'returnAwbCarrier' => (string) ($row['return_awb_carrier'] ?? ''),
+        'returnAwbIssuedAt' => (string) ($row['return_awb_issued_at'] ?? ''),
     ];
 
     if (is_array($orderInfo)) {
@@ -203,6 +215,28 @@ function shoptop_return_notify_customer(string $newStatus, array $returnRow, arr
 
 if ($method === 'GET') {
     shoptop_require_admin();
+
+    // Eticheta AWB de retur (PDF/HTML inline).
+    if (isset($_GET['printAwb'])) {
+        $id = is_numeric($_GET['id'] ?? null) ? (int) $_GET['id'] : 0;
+        $stmt = $pdo->prepare(
+            'SELECT id, order_id, return_awb_number, return_awb_carrier, return_awb_parcel_id
+             FROM return_requests WHERE id = :id LIMIT 1'
+        );
+        $stmt->execute(['id' => $id]);
+        $row = $stmt->fetch();
+        if (!$row) {
+            shoptop_json_error('Cererea nu a fost gasita.', 404);
+        }
+        try {
+            $payload = shoptop_return_print_awb($row);
+        } catch (Throwable $e) {
+            shoptop_json_error($e->getMessage(), 400);
+        }
+        require_once __DIR__ . '/orders.php';
+        shoptop_send_awb_print_payload($payload, 'awb-retur-' . (string) $row['order_id']);
+    }
+
     $status = trim((string) ($_GET['status'] ?? 'all'));
     $allowed = ['nou', 'aprobat', 'respins', 'finalizat'];
     $where = '';
@@ -214,7 +248,7 @@ if ($method === 'GET') {
 
     $stmt = $pdo->prepare(
         'SELECT id, order_id, customer_name, customer_email, customer_phone, items, reason,
-                iban, status, admin_notes, created_at
+                iban, status, admin_notes, created_at' . shoptop_return_awb_select_extra($pdo) . '
          FROM return_requests ' . $where . '
          ORDER BY created_at DESC
          LIMIT 200'
@@ -235,6 +269,65 @@ if ($method === 'POST') {
     }
 
     $action = trim((string) ($body['action'] ?? ''));
+
+    // AWB de retur: curierul ridică de la client (adresa din comandă) și aduce la magazin.
+    if ($action === 'issueReturnAwb' || $action === 'cancelReturnAwb') {
+        shoptop_require_admin();
+        $id = is_numeric($body['id'] ?? null) ? (int) $body['id'] : 0;
+        if ($id <= 0) {
+            shoptop_json_error('ID-ul cererii este invalid.', 400);
+        }
+        $rowStmt = $pdo->prepare(
+            'SELECT id, order_id, customer_name, customer_email, customer_phone, items, reason,
+                    iban, status, admin_notes, created_at' . shoptop_return_awb_select_extra($pdo) . '
+             FROM return_requests WHERE id = :id LIMIT 1'
+        );
+        $rowStmt->execute(['id' => $id]);
+        $row = $rowStmt->fetch();
+        if (!$row) {
+            shoptop_json_error('Cererea nu a fost gasita.', 404);
+        }
+
+        $emailSent = false;
+        $emailWarning = null;
+        try {
+            if ($action === 'issueReturnAwb') {
+                $carrier = trim((string) ($body['carrier'] ?? 'fan-courier'));
+                $issued = shoptop_return_issue_awb($pdo, $row, $carrier);
+                if (!empty($body['notifyCustomer'])) {
+                    try {
+                        $emailSent = shoptop_return_notify_pickup($row, $issued['carrier'], $issued['awb']);
+                        if (!$emailSent) {
+                            $emailWarning = 'AWB emis, dar emailul catre client nu a putut fi trimis.';
+                        }
+                    } catch (Throwable $e) {
+                        error_log('Return pickup email: ' . $e->getMessage());
+                        $emailWarning = 'AWB emis, dar emailul catre client a esuat.';
+                    }
+                }
+            } else {
+                shoptop_return_cancel_awb($pdo, $row);
+            }
+        } catch (Throwable $e) {
+            shoptop_json_error($e->getMessage(), 400);
+        }
+
+        $rowStmt->execute(['id' => $id]);
+        $fresh = $rowStmt->fetch();
+        $response = [
+            'ok' => true,
+            'emailSent' => $emailSent,
+            'return' => shoptop_return_row_to_response(
+                is_array($fresh) ? $fresh : $row,
+                shoptop_return_lookup_order($pdo, (string) $row['order_id'])
+            ),
+        ];
+        if ($emailWarning !== null) {
+            $response['emailWarning'] = $emailWarning;
+        }
+        shoptop_json_response($response);
+    }
+
     if ($action === 'updateStatus' || $action === 'update' || $action === 'delete') {
         shoptop_require_admin();
         $id = is_numeric($body['id'] ?? null) ? (int) $body['id'] : 0;
@@ -244,7 +337,7 @@ if ($method === 'POST') {
 
         $existingStmt = $pdo->prepare(
             'SELECT id, order_id, customer_name, customer_email, customer_phone, items, reason,
-                    iban, status, admin_notes, created_at
+                    iban, status, admin_notes, created_at' . shoptop_return_awb_select_extra($pdo) . '
              FROM return_requests WHERE id = :id LIMIT 1'
         );
         $existingStmt->execute(['id' => $id]);
@@ -374,7 +467,7 @@ if ($method === 'POST') {
 
         $freshStmt = $pdo->prepare(
             'SELECT id, order_id, customer_name, customer_email, customer_phone, items, reason,
-                    iban, status, admin_notes, created_at
+                    iban, status, admin_notes, created_at' . shoptop_return_awb_select_extra($pdo) . '
              FROM return_requests WHERE id = :id LIMIT 1'
         );
         $freshStmt->execute(['id' => $id]);

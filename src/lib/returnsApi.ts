@@ -27,6 +27,58 @@ export type ReturnRequest = {
   orderExists?: boolean
   orderTotalAmount?: number | null
   orderStatus?: string | null
+  /** AWB de ridicare a coletului de la client (gol = neemis). */
+  returnAwbNumber?: string
+  returnAwbCarrier?: ReturnAwbCarrier | ''
+  returnAwbIssuedAt?: string
+}
+
+export type ReturnAwbCarrier = 'fan-courier' | 'dpd'
+
+export type ReturnAwbResult = {
+  ok: boolean
+  emailSent: boolean
+  emailWarning?: string
+  return: ReturnRequest
+}
+
+/** Creează AWB „în oglindă”: curierul ridică de la adresa clientului din comandă. */
+export async function issueReturnAwb(input: {
+  id: number
+  carrier: ReturnAwbCarrier
+  notifyCustomer: boolean
+}): Promise<ReturnAwbResult> {
+  const res = await apiFetch(
+    '/returns.php',
+    { method: 'POST', body: JSON.stringify({ action: 'issueReturnAwb', ...input }) },
+    { credentials: 'include' },
+  )
+  if (!res.ok) throw new Error(await readErrorMessage(res))
+  return (await res.json()) as ReturnAwbResult
+}
+
+export async function cancelReturnAwb(id: number): Promise<ReturnAwbResult> {
+  const res = await apiFetch(
+    '/returns.php',
+    { method: 'POST', body: JSON.stringify({ action: 'cancelReturnAwb', id }) },
+    { credentials: 'include' },
+  )
+  if (!res.ok) throw new Error(await readErrorMessage(res))
+  return (await res.json()) as ReturnAwbResult
+}
+
+/** Descarcă eticheta AWB de retur și o deschide într-un tab nou. */
+export async function openReturnAwbLabel(id: number): Promise<void> {
+  const res = await apiFetch(
+    `/returns.php?printAwb=1&id=${encodeURIComponent(String(id))}`,
+    { cache: 'no-store' },
+    { credentials: 'include' },
+  )
+  if (!res.ok) throw new Error(await readErrorMessage(res))
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  window.open(url, '_blank', 'noopener')
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
 
 export type ReturnUpdateInput = {

@@ -141,6 +141,17 @@ export function AdminReturnsPage() {
         <ReturnEditModal
           item={editing}
           onClose={() => setEditing(null)}
+          onAwbChanged={(updated, warning) => {
+            setReturns((current) =>
+              current.map((r) => (r.id === updated.id ? updated : r)),
+            )
+            setNotice(
+              warning
+                ?? (updated.returnAwbNumber
+                  ? `AWB retur ${updated.returnAwbNumber} emis. Curierul ridică coletul de la client.`
+                  : 'AWB-ul de retur a fost anulat.'),
+            )
+          }}
           onSaved={(updated, emailWarning) => {
             setEditing(null)
             setNotice(

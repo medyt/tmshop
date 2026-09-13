@@ -2,11 +2,190 @@ import { useEffect, useId, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { formatRon } from '../../lib/shopCatalog'
 import { isValidRoIban, normalizeRoIban } from '../../lib/roIban'
+import './ReturnEditModal.css'
 import {
+  cancelReturnAwb,
+  issueReturnAwb,
+  openReturnAwbLabel,
   updateReturnRequest,
+  type ReturnAwbCarrier,
   type ReturnRequest,
   type ReturnStatus,
 } from '../../lib/returnsApi'
+
+const CARRIER_OPTIONS: Array<{ value: ReturnAwbCarrier; label: string }> = [
+  { value: 'fan-courier', label: 'Fan Courier' },
+  { value: 'dpd', label: 'DPD' },
+]
+
+function carrierLabel(value: string | undefined): string {
+  return value === 'dpd' ? 'DPD' : 'Fan Courier'
+}
+
+function formatAwbDate(value: string | undefined): string {
+  if (!value) return ''
+  const date = new Date(value.includes('T') ? value : value.replace(' ', 'T'))
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('ro-RO', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+/** Card „Ridicare colet de la client”: emite / printează / anulează AWB-ul de retur. */
+function ReturnPickupCard({
+  item,
+  disabled,
+  onUpdated,
+}: {
+  item: ReturnRequest
+  disabled: boolean
+  onUpdated: (updated: ReturnRequest, warning?: string) => void
+}) {
+  const [carrier, setCarrier] = useState<ReturnAwbCarrier>('fan-courier')
+  const [notify, setNotify] = useState(true)
+  const [busy, setBusy] = useState<'issue' | 'cancel' | 'print' | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [confirmCancel, setConfirmCancel] = useState(false)
+
+  const hasAwb = Boolean(item.returnAwbNumber)
+  const canIssue = item.orderExists === true && !hasAwb && !disabled && busy === null
+
+  const run = async (kind: 'issue' | 'cancel' | 'print') => {
+    if (busy) return
+    setBusy(kind)
+    setError(null)
+    try {
+      if (kind === 'issue') {
+        const result = await issueReturnAwb({ id: item.id, carrier, notifyCustomer: notify })
+        onUpdated(result.return, result.emailWarning)
+      } else if (kind === 'cancel') {
+        const result = await cancelReturnAwb(item.id)
+        setConfirmCancel(false)
+        onUpdated(result.return)
+      } else {
+        await openReturnAwbLabel(item.id)
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Operațiunea a eșuat.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <section className="order-edit__card return-pickup">
+      <h3>Ridicare colet de la client</h3>
+      <p className="muted small">
+        Creează un AWB în oglindă: curierul ridică coletul de la adresa din comanda
+        #{item.orderId} și îl aduce la magazin. Transportul îl plătim noi.
+      </p>
+
+      {hasAwb ? (
+        <>
+          <div className="return-pickup__awb">
+            <span className="return-pickup__label">AWB {carrierLabel(item.returnAwbCarrier)}</span>
+            <strong className="return-pickup__number">{item.returnAwbNumber}</strong>
+            {item.returnAwbIssuedAt ? (
+              <span className="muted small">emis {formatAwbDate(item.returnAwbIssuedAt)}</span>
+            ) : null}
+          </div>
+          <div className="order-edit__actions">
+            <button
+              type="button"
+              className="btn primary btn--sm"
+              disabled={busy !== null}
+              onClick={() => void run('print')}
+            >
+              {busy === 'print' ? 'Se deschide…' : 'Printează eticheta'}
+            </button>
+            {!confirmCancel ? (
+              <button
+                type="button"
+                className="btn secondary btn--sm"
+                disabled={busy !== null || disabled}
+                onClick={() => setConfirmCancel(true)}
+              >
+                Anulează AWB
+              </button>
+            ) : (
+              <>
+                <span className="small">Sigur anulezi ridicarea la curier?</span>
+                <button
+                  type="button"
+                  className="btn danger btn--sm"
+                  disabled={busy !== null}
+                  onClick={() => void run('cancel')}
+                >
+                  {busy === 'cancel' ? 'Se anulează…' : 'Da, anulează'}
+                </button>
+                <button
+                  type="button"
+                  className="btn secondary btn--sm"
+                  disabled={busy !== null}
+                  onClick={() => setConfirmCancel(false)}
+                >
+                  Nu
+                </button>
+              </>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          {item.orderExists !== true ? (
+            <p className="muted small">
+              Cererea trebuie asociată unei comenzi existente (salvează numărul corect) ca să
+              putem prelua adresa clientului.
+            </p>
+          ) : null}
+          <div className="return-pickup__form">
+            <label className="field">
+              <span>Curier</span>
+              <select
+                value={carrier}
+                disabled={!canIssue}
+                onChange={(e) => setCarrier(e.target.value as ReturnAwbCarrier)}
+              >
+                {CARRIER_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="checkbox return-pickup__notify">
+              <input
+                type="checkbox"
+                checked={notify}
+                disabled={!canIssue}
+                onChange={(e) => setNotify(e.target.checked)}
+              />
+              <span>Trimite clientului email cu AWB-ul și instrucțiuni</span>
+            </label>
+            <button
+              type="button"
+              className="btn primary"
+              disabled={!canIssue}
+              onClick={() => void run('issue')}
+            >
+              {busy === 'issue' ? 'Se creează AWB…' : `Generează AWB retur (${carrierLabel(carrier)})`}
+            </button>
+          </div>
+        </>
+      )}
+
+      {error ? (
+        <p className="app-status app-status--error" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </section>
+  )
+}
 
 const STATUS_OPTIONS: Array<{ value: ReturnStatus; label: string }> = [
   { value: 'nou', label: 'Nouă (de validat)' },
@@ -26,10 +205,14 @@ type Props = {
   item: ReturnRequest
   onClose: () => void
   onSaved: (updated: ReturnRequest, emailWarning?: string) => void
+  /** AWB retur emis/anulat: lista se actualizează, fereastra rămâne deschisă. */
+  onAwbChanged?: (updated: ReturnRequest, warning?: string) => void
 }
 
-export function ReturnEditModal({ item, onClose, onSaved }: Props) {
+export function ReturnEditModal({ item, onClose, onSaved, onAwbChanged }: Props) {
   const titleId = useId()
+  // Starea cererii după emiterea/anularea AWB (fără a închide fereastra).
+  const [live, setLive] = useState<ReturnRequest>(item)
   const [orderId, setOrderId] = useState(item.orderId)
   const [status, setStatus] = useState<ReturnStatus>(item.status)
   const [customerName, setCustomerName] = useState(item.customerName)
@@ -260,10 +443,20 @@ export function ReturnEditModal({ item, onClose, onSaved }: Props) {
             </section>
           </div>
 
+          <ReturnPickupCard
+            item={live}
+            disabled={busy}
+            onUpdated={(updated, warning) => {
+              setLive(updated)
+              onAwbChanged?.(updated, warning)
+            }}
+          />
+
           <p className="muted small" style={{ marginTop: '0.75rem' }}>
-            Transportul de retur e plătit de client. După primirea coletului,
-            rambursezi suma totală a comenzii în contul IBAN. La finalizare,
-            comanda asociată trece automat pe Returnată.
+            Implicit, transportul de retur e plătit de client (îl trimite singur la
+            adresa din email). Dacă generezi AWB-ul de mai sus, ridicarea o plătim
+            noi. După primirea coletului, rambursezi suma totală a comenzii în
+            contul IBAN. La finalizare, comanda asociată trece automat pe Returnată.
           </p>
 
           {error ? (

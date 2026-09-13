@@ -1,0 +1,59 @@
+/* Card „Ridicare colet de la client” din fereastra de retur + chip AWB în listă. */
+
+.return-pickup {
+  margin-top: 0.85rem;
+}
+
+.return-pickup__form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem 0.9rem;
+}
+
+.return-pickup__form .field {
+  min-width: 11rem;
+  margin: 0;
+}
+
+.return-pickup__notify {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.86rem;
+  color: var(--text-h);
+  padding-bottom: 0.45rem;
+}
+
+.return-pickup__awb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.75rem;
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.6rem;
+  border: 1px solid var(--accent-border);
+  border-radius: 10px;
+  background: var(--accent-bg);
+}
+
+.return-pickup__label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.return-pickup__number {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.05rem;
+  color: var(--text-h);
+  letter-spacing: 0.02em;
+}
+
+.return-table__awb {
+  display: block;
+  margin-top: 0.25rem;
+  white-space: nowrap;
+}

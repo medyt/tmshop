@@ -23,6 +23,21 @@ return [
         'Sat Alexandru cel Bun, str. Iaz nr. 1, județul Iași, cod poștal 707591, România',
     // Telefon destinatar pe coletul de retur (obligatoriu la curier).
     'return_phone' => '0725 026 381',
+    // Ridicare colet de retur de la client (AWB „în oglindă”, plătit de magazin):
+    // adresa la care curierul livrează coletul. Structurat, ca nomenclatorul DPD / Fan.
+    'return_pickup' => [
+        'name' => 'TM SHOP SRL',          // destinatar pe AWB (firma)
+        'contact' => 'TM SHOP',           // persoana de contact
+        'phone' => '0725026381',
+        'county' => 'Iași',
+        'city' => 'Alexandru cel Bun',
+        'street' => 'Iaz',
+        'street_number' => '1',
+        'address_extra' => '',
+        'postal_code' => '707591',
+        'dpd_site_id' => null,            // opțional: siteId DPD al localității (altfel se caută)
+        'dpd_client_id' => null,          // opțional: clientId DPD al contractului (altfel se ia din client/contract)
+    ],
     'shipping_flat_rate' => 19.99,
     // Livrare gratuită de la acest subtotal (RON). 0 = dezactivat (rămâne tariful fix).
     'shipping_free_over' => 0,

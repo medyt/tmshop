@@ -272,6 +272,14 @@ export function AdminReturnsTable({ returns, onEdit, onDelete }: Props) {
                       </td>
                       <td>
                         <ReturnStatusBadge status={item.status} />
+                        {item.returnAwbNumber ? (
+                          <span
+                            className="cell-sku return-table__awb"
+                            title={`AWB retur ${item.returnAwbCarrier === 'dpd' ? 'DPD' : 'Fan Courier'}`}
+                          >
+                            🚚 {item.returnAwbNumber}
+                          </span>
+                        ) : null}
                       </td>
                       <td>
                         {itemsText ? (
