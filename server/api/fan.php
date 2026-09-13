@@ -92,6 +92,9 @@ function shoptop_fan_settings(): array
         'client_id' => (int) ($cfg['client_id'] ?? 0),
         'service' => trim((string) ($cfg['service'] ?? 'Standard')),
         'service_cod' => trim((string) ($cfg['service_cod'] ?? 'Cont Colector')),
+        // Ridicare de la terți (AWB retur, expeditor = clientul). Cu „Standard” Fan ignoră
+        // expeditorul și pune contul propriu la ambele capete.
+        'return_service' => trim((string) ($cfg['return_service'] ?? 'Colectare')),
         'default_weight_kg' => max(0.1, (float) ($cfg['default_weight_kg'] ?? 1.0)),
         // A6 e acceptat de Fan doar pe AWB cu ePOD (opțiunea X).
         'paper_size' => $format,

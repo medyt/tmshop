@@ -474,7 +474,8 @@ function shoptop_return_fan_create(array $pickup, array $delivery, array $return
 
     $orderId = (string) $returnRow['order_id'];
     $info = [
-        'service' => $s['service'],
+        // „Colectare” = ridicare de la terți; cu „Standard” Fan ignoră blocul sender.
+        'service' => $s['return_service'],
         'packages' => ['parcel' => 1, 'envelope' => 0],
         'weight' => $s['default_weight_kg'],
         'cod' => 0,
@@ -498,7 +499,13 @@ function shoptop_return_fan_create(array $pickup, array $delivery, array $return
 
     $res = shoptop_fan_request('POST', '/intern-awb', null, $payload);
     if (!$res['ok'] || !is_array($res['json'])) {
-        throw new RuntimeException('Fan Courier: ' . ($res['error'] ?? 'crearea AWB de retur a eșuat.'));
+        $err = (string) ($res['error'] ?? 'crearea AWB de retur a eșuat.');
+        if (stripos($err, 'service') !== false || stripos($err, 'serviciu') !== false) {
+            $err .= ' — serviciul „' . $s['return_service'] . '” nu e acceptat de contul tău Fan. '
+                . 'Pune în config.php → fan → return_service numele exact al serviciului de '
+                . 'ridicare de la terți din SelfAWB.';
+        }
+        throw new RuntimeException('Fan Courier: ' . $err);
     }
     $list = $res['json']['response'] ?? $res['json']['data'] ?? null;
     $first = is_array($list) && isset($list[0]) && is_array($list[0]) ? $list[0] : (is_array($list) ? $list : null);
