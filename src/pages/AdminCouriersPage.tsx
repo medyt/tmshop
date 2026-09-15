@@ -3,7 +3,9 @@ import { Link } from 'react-router-dom'
 import { AdminLayout } from '../components/admin/AdminLayout'
 import { CourierNav } from '../components/admin/couriers/CourierNav'
 import { CountyTiles, Donut, HBar, Legend, SegmentBar, StackedColumns, type StackedDay } from '../components/admin/couriers/charts'
+import { DateRangePicker } from '../components/admin/couriers/DateRangePicker'
 import { toneForPct } from '../lib/countyTiles'
+import { defaultRange, formatRange, parseIsoDate, rangeDays, toIsoDate, type DateRange } from '../lib/dateRange'
 import {
   carrierColor,
   carrierLabel,
@@ -20,13 +22,9 @@ import './AdminCourierPanels.css'
 
 type MapMetric = 'otd' | 'in24h' | 'return'
 
-const DAYS_OPTIONS = [
-  { value: 7, label: '7 zile' },
-  { value: 30, label: '30 zile' },
-  { value: 90, label: '90 zile' },
-  { value: 365, label: '1 an' },
-  { value: 0, label: 'Tot' },
-]
+type Filters = { range: DateRange; carrier: string; sla: number }
+
+const initialFilters = (): Filters => ({ range: defaultRange(), carrier: 'all', sla: 0 })
 
 const SLA_OPTIONS = [
   { value: 0, label: 'Termen curier' },
@@ -117,9 +115,9 @@ function CarrierCard({ carrier, a }: { carrier: string; a: Agg }) {
 }
 
 export function AdminCouriersPage() {
-  const [days, setDays] = useState(30)
-  const [carrier, setCarrier] = useState('all')
-  const [sla, setSla] = useState(0)
+  const [applied, setApplied] = useState<Filters>(initialFilters)
+  const [pending, setPending] = useState<Filters>(initialFilters)
+  const sla = applied.sla
   const [data, setData] = useState<DashboardResponse | null>(null)
   const [loading, setLoading] = useState(isCouriersApiEnabled())
   const [error, setError] = useState<string | null>(null)
@@ -132,7 +130,7 @@ export function AdminCouriersPage() {
   useEffect(() => {
     if (!isCouriersApiEnabled()) return
     let cancelled = false
-    fetchCourierDashboard({ days, carrier, sla })
+    fetchCourierDashboard({ from: applied.range.from, to: applied.range.to, carrier: applied.carrier, sla: applied.sla })
       .then((d) => {
         if (cancelled) return
         setData(d)
@@ -147,7 +145,19 @@ export function AdminCouriersPage() {
     return () => {
       cancelled = true
     }
-  }, [days, carrier, sla, reloadTick])
+  }, [applied, reloadTick])
+
+  const dirty = pending.range.from !== applied.range.from || pending.range.to !== applied.range.to || pending.carrier !== applied.carrier || pending.sla !== applied.sla
+
+  function applyFilters() {
+    setApplied(pending)
+  }
+
+  function resetFilters() {
+    const f = initialFilters()
+    setPending(f)
+    setApplied(f)
+  }
 
   async function runSync() {
     if (busy) return
@@ -178,21 +188,44 @@ export function AdminCouriersPage() {
   }, [data, mapMetric])
   const selectedCounty = county && countyMap[county] ? countyMap[county] : (data?.counties[0] ?? null)
 
-  const dayColumns: StackedDay[] = useMemo(
-    () =>
-      (data?.days ?? []).map((d) => ({
-        label: d.date.slice(8, 10) + '.' + d.date.slice(5, 7),
-        title: d.date,
+  const dayColumns: StackedDay[] = useMemo(() => {
+    const src = data?.days ?? []
+    // Peste ~10 săptămâni, coloanele se grupează pe săptămâni (luni–duminică) ca să rămână lizibile.
+    const weekly = rangeDays(applied.range) > 70
+    const groups = new Map<string, { label: string; title: string; otd: number; lateClient: number; lateCourier: number; inProgress: number; unknown: number }>()
+    for (const d of src) {
+      let key = d.date
+      let label = d.date.slice(8, 10) + '.' + d.date.slice(5, 7)
+      let title = d.date
+      if (weekly) {
+        const dt = parseIsoDate(d.date)
+        dt.setDate(dt.getDate() - ((dt.getDay() + 6) % 7))
+        key = toIsoDate(dt)
+        label = key.slice(8, 10) + '.' + key.slice(5, 7)
+        title = `săptămâna din ${label}`
+      }
+      const g = groups.get(key) ?? { label, title, otd: 0, lateClient: 0, lateCourier: 0, inProgress: 0, unknown: 0 }
+      g.otd += d.otd
+      g.lateClient += d.lateClient
+      g.lateCourier += d.lateCourier
+      g.inProgress += d.inProgress
+      g.unknown += d.unknown
+      groups.set(key, g)
+    }
+    return [...groups.entries()]
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+      .map(([, g]) => ({
+        label: g.label,
+        title: g.title,
         parts: [
-          { value: d.otd, color: COLORS.otd, label: 'la timp' },
-          { value: d.lateClient, color: COLORS.client, label: 'întârziere client' },
-          { value: d.lateCourier, color: COLORS.courier, label: 'întârziere curier / retur' },
-          { value: d.inProgress, color: COLORS.progress, label: 'pe drum' },
-          { value: d.unknown, color: COLORS.unknown, label: 'fără tracking' },
+          { value: g.otd, color: COLORS.otd, label: 'la timp' },
+          { value: g.lateClient, color: COLORS.client, label: 'întârziere client' },
+          { value: g.lateCourier, color: COLORS.courier, label: 'întârziere curier / retur' },
+          { value: g.inProgress, color: COLORS.progress, label: 'pe drum' },
+          { value: g.unknown, color: COLORS.unknown, label: 'fără tracking' },
         ],
-      })),
-    [data],
-  )
+      }))
+  }, [data, applied.range])
 
   const returnRows = useMemo(() => {
     const rows = carriers.map(([c, a]) => ({ key: c, label: carrierLabel(c), a }))
@@ -225,45 +258,41 @@ export function AdminCouriersPage() {
           {error ? <p className="app-status app-status--error" role="alert">{error}</p> : null}
           {notice ? <p className="app-status app-status--ok" role="status">{notice}</p> : null}
 
-          <section className="cd-filters">
-            <div className="ao-filter">
-              <span className="ao-filter__label">Perioadă</span>
-              <div className="ao-filter__body">
-                <div className="ao-seg" role="group">
-                  {DAYS_OPTIONS.map((o) => (
-                    <button key={o.value} type="button" className={`ao-seg__btn${days === o.value ? ' ao-seg__btn--active' : ''}`} onClick={() => setDays(o.value)}>
-                      {o.label}
-                    </button>
-                  ))}
-                </div>
-                <span className="ao-filter__summary">după data AWB-ului</span>
-              </div>
+          <section className="cd-filters cd-filters--bar">
+            <label className="cd-filter">
+              <span className="cd-filter__label">SLA</span>
+              <select value={pending.sla} onChange={(e) => setPending((p) => ({ ...p, sla: Number(e.target.value) }))}>
+                {SLA_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="cd-filter">
+              <span className="cd-filter__label">Perioadă (data AWB)</span>
+              <DateRangePicker value={pending.range} onChange={(range) => setPending((p) => ({ ...p, range }))} />
             </div>
-            <div className="ao-filter">
-              <span className="ao-filter__label">Curier</span>
-              <div className="ao-filter__body">
-                <div className="ao-seg" role="group">
-                  {['all', 'fan-courier', 'dpd'].map((c) => (
-                    <button key={c} type="button" className={`ao-seg__btn${carrier === c ? ' ao-seg__btn--active' : ''}`} onClick={() => setCarrier(c)}>
-                      {c === 'all' ? 'Toți' : carrierLabel(c)}
-                    </button>
-                  ))}
-                </div>
-              </div>
+            <label className="cd-filter">
+              <span className="cd-filter__label">Curier</span>
+              <select value={pending.carrier} onChange={(e) => setPending((p) => ({ ...p, carrier: e.target.value }))}>
+                <option value="all">Toți curierii</option>
+                <option value="fan-courier">Fan Courier</option>
+                <option value="dpd">DPD</option>
+              </select>
+            </label>
+            <div className="cd-filter cd-filter--actions">
+              <button type="button" className={`btn ${dirty ? 'primary' : 'secondary'}`} onClick={applyFilters} disabled={!dirty}>
+                Aplică
+              </button>
+              <button type="button" className="btn secondary" onClick={resetFilters}>
+                Șterge filtre
+              </button>
             </div>
-            <div className="ao-filter">
-              <span className="ao-filter__label">SLA (la timp)</span>
-              <div className="ao-filter__body">
-                <div className="ao-seg" role="group">
-                  {SLA_OPTIONS.map((o) => (
-                    <button key={o.value} type="button" className={`ao-seg__btn${sla === o.value ? ' ao-seg__btn--active' : ''}`} onClick={() => setSla(o.value)}>
-                      {o.label}
-                    </button>
-                  ))}
-                </div>
-                <span className="ao-filter__summary">zile lucrătoare de la ridicare la livrare</span>
-              </div>
-            </div>
+            <span className="cd-filters__summary">
+              {formatRange(applied.range)} · {rangeDays(applied.range)} zile · {applied.carrier === 'all' ? 'toți curierii' : carrierLabel(applied.carrier)} · termen{' '}
+              {applied.sla === 0 ? 'al curierului' : `${applied.sla} zile lucr.`}
+            </span>
           </section>
 
           {loading || !total ? (
@@ -561,7 +590,7 @@ export function AdminCouriersPage() {
 
               <section className="cd-section">
                 <header className="cd-section__head">
-                  <h2>Pe zile</h2>
+                  <h2>{rangeDays(applied.range) > 70 ? 'Pe săptămâni' : 'Pe zile'}</h2>
                   <Legend
                     items={[
                       { color: COLORS.otd, label: 'la timp' },

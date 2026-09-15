@@ -255,7 +255,7 @@ export type CourierSettingFull = CourierSetting & {
 }
 
 export type DashboardResponse = {
-  period: { days: number; carrier: string; sla: number }
+  period: { days: number; from: string | null; to: string | null; carrier: string; sla: number }
   total: Agg
   carriers: Record<string, Agg>
   counties: CountyAgg[]
@@ -267,8 +267,12 @@ export type DashboardResponse = {
   courierSettings: CourierSettingFull[]
 }
 
-export async function fetchCourierDashboard(params: { days: number; carrier?: string; sla?: number }): Promise<DashboardResponse> {
-  const q = new URLSearchParams({ dashboard: '1', days: String(params.days) })
+export async function fetchCourierDashboard(params: { days?: number; from?: string; to?: string; carrier?: string; sla?: number }): Promise<DashboardResponse> {
+  const q = new URLSearchParams({ dashboard: '1', days: String(params.days ?? 30) })
+  if (params.from && params.to) {
+    q.set('from', params.from)
+    q.set('to', params.to)
+  }
   if (params.carrier && params.carrier !== 'all') q.set('carrier', params.carrier)
   if (params.sla) q.set('sla', String(params.sla))
   const res = await apiFetch(`/courier_routing.php?${q.toString()}`, { cache: 'no-store' }, { credentials: 'include' })

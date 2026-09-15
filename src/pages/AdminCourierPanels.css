@@ -1040,3 +1040,251 @@
   overflow-x: auto;
   max-width: 100%;
 }
+
+/* Bara de filtre (stil scule365) */
+
+.cd-filters--bar {
+  align-items: flex-end;
+  gap: 0.6rem 0.9rem;
+}
+
+.cd-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.cd-filter__label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.cd-filter select {
+  min-height: 2.4rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  color: var(--text-h);
+  font: inherit;
+}
+
+.cd-filter--actions {
+  flex-direction: row;
+  gap: 0.5rem;
+}
+
+.cd-filters__summary {
+  flex: 1 1 100%;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* Selector de perioadă (drp-) */
+
+.drp {
+  position: relative;
+}
+
+.drp-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.4rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  color: var(--text-h);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.drp-trigger svg {
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+}
+
+.drp-trigger:hover,
+.drp-trigger--open {
+  border-color: var(--accent-border);
+}
+
+.drp-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16);
+  overflow: hidden;
+}
+
+.drp-presets {
+  list-style: none;
+  margin: 0;
+  padding: 0.5rem 0;
+  min-width: 150px;
+  border-right: 1px solid var(--border);
+  background: var(--table-head-bg);
+}
+
+.drp-preset {
+  display: block;
+  width: 100%;
+  padding: 0.45rem 0.9rem;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  font-size: 0.86rem;
+  color: var(--text-h);
+  cursor: pointer;
+}
+
+.drp-preset:hover {
+  background: var(--panel-bg);
+}
+
+.drp-preset--active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.drp-cal {
+  padding: 0.7rem 0.8rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.drp-cal__nav {
+  display: flex;
+  justify-content: space-between;
+}
+
+.drp-nav {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel-bg);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-h);
+}
+
+.drp-months {
+  display: flex;
+  gap: 1.2rem;
+  margin-top: -1.6rem;
+}
+
+.drp-month {
+  width: 238px;
+}
+
+.drp-month__title {
+  text-align: center;
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--text-h);
+  margin-bottom: 0.4rem;
+  line-height: 28px;
+}
+
+.drp-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 32px);
+  gap: 2px;
+  justify-content: center;
+}
+
+.drp-weekday {
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--muted);
+  padding-bottom: 0.2rem;
+}
+
+.drp-day {
+  width: 32px;
+  height: 30px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-size: 0.84rem;
+  color: var(--text-h);
+  cursor: pointer;
+}
+
+.drp-day:hover {
+  background: var(--code-bg);
+}
+
+.drp-day--today {
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.drp-day--future {
+  color: var(--muted);
+}
+
+.drp-day--in {
+  background: var(--accent-bg);
+  border-radius: 0;
+  color: var(--accent);
+}
+
+.drp-day--edge {
+  background: var(--accent);
+  color: #fff;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.drp-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.drp-foot__actions {
+  display: inline-flex;
+  gap: 0.4rem;
+}
+
+@media (max-width: 720px) {
+  .drp-pop {
+    flex-direction: column;
+    left: auto;
+    right: 0;
+  }
+
+  .drp-presets {
+    display: flex;
+    flex-wrap: wrap;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .drp-months {
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-top: 0;
+  }
+}

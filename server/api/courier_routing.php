@@ -307,11 +307,16 @@ function shoptop_cr_reason_label(string $desc): string
     return mb_substr(trim($desc), 0, 60);
 }
 
-function shoptop_cr_dashboard(PDO $pdo, int $days, string $carrier, int $sla): array
+function shoptop_cr_dashboard(PDO $pdo, int $days, string $carrier, int $sla, ?string $from = null, ?string $to = null): array
 {
     $where = ["kind = 'delivery'", "status <> 'anulat'"];
     $params = [];
-    if ($days > 0) {
+    if ($from !== null && $to !== null) {
+        // Interval explicit (inclusiv), dupa data AWB-ului.
+        $where[] = 'awb_at >= :from AND awb_at < DATE_ADD(:to, INTERVAL 1 DAY)';
+        $params['from'] = $from;
+        $params['to'] = $to;
+    } elseif ($days > 0) {
         $where[] = 'awb_at >= DATE_SUB(NOW(), INTERVAL ' . $days . ' DAY)';
     }
     if ($carrier !== '' && $carrier !== 'all') {
@@ -458,7 +463,7 @@ function shoptop_cr_dashboard(PDO $pdo, int $days, string $carrier, int $sla): a
     usort($reasons, static fn ($a, $b) => $b['n'] <=> $a['n']);
 
     return [
-        'period' => ['days' => $days, 'carrier' => $carrier === '' ? 'all' : $carrier, 'sla' => $sla],
+        'period' => ['days' => $days, 'from' => $from, 'to' => $to, 'carrier' => $carrier === '' ? 'all' : $carrier, 'sla' => $sla],
         'total' => shoptop_cr_finish($total),
         'carriers' => $carriersOut,
         'counties' => $countiesOut,
@@ -1054,6 +1059,15 @@ if ($method === 'GET') {
         $days = (int) ($_GET['days'] ?? 30);
         $carrier = trim((string) ($_GET['carrier'] ?? ''));
         $sla = max(0, min(10, (int) ($_GET['sla'] ?? 0)));
+        $from = trim((string) ($_GET['from'] ?? ''));
+        $to = trim((string) ($_GET['to'] ?? ''));
+        $isDate = static fn (string $d): bool => (bool) preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) && checkdate((int) substr($d, 5, 2), (int) substr($d, 8, 2), (int) substr($d, 0, 4));
+        if ($isDate($from) && $isDate($to)) {
+            if ($from > $to) {
+                [$from, $to] = [$to, $from];
+            }
+            shoptop_json_response(shoptop_cr_dashboard($pdo, 0, $carrier, $sla, $from, $to));
+        }
         shoptop_json_response(shoptop_cr_dashboard($pdo, $days, $carrier, $sla));
     }
     if (isset($_GET['routing'])) {
