@@ -333,3 +333,8 @@
     gap: 0.1rem;
   }
 }
+
+.cp-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}

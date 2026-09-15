@@ -20,6 +20,9 @@ import { ProductEditorPage } from './pages/admin/ProductEditorPage'
 import { AdminCustomersPage } from './pages/AdminCustomersPage'
 import { AdminOrderImportPage } from './pages/AdminOrderImportPage'
 import { AdminCouriersPage } from './pages/AdminCouriersPage'
+import { AdminCourierShipmentsPage } from './pages/AdminCourierShipmentsPage'
+import { AdminCourierRoutingPage } from './pages/AdminCourierRoutingPage'
+import { AdminCourierRatesPage } from './pages/AdminCourierRatesPage'
 import { LoginPage } from './pages/LoginPage'
 import { CustomerOrdersPage } from './pages/CustomerOrdersPage'
 import { OrderSuccessPage } from './pages/OrderSuccessPage'
@@ -152,6 +155,30 @@ function AppRoutes() {
             element={
               <AdminRoute>
                 <AdminCouriersPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/curieri/expedieri"
+            element={
+              <AdminRoute>
+                <AdminCourierShipmentsPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/curieri/rutare"
+            element={
+              <AdminRoute>
+                <AdminCourierRoutingPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/curieri/tarife"
+            element={
+              <AdminRoute>
+                <AdminCourierRatesPage />
               </AdminRoute>
             }
           />

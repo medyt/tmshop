@@ -110,7 +110,7 @@ const NAV_MAIN: NavItem[] = [
     match: ['/admin/produse'],
   },
   { to: '/admin/awb', label: 'AWB printare', icon: ICONS.awb },
-  { to: '/admin/curieri', label: 'Curieri', icon: ICONS.awb },
+  { to: '/admin/curieri', label: 'Curieri', icon: ICONS.awb, match: ['/admin/curieri'] },
   { to: '/admin/recenzii', label: 'Recenzii', icon: ICONS.reviews },
   { to: '/admin/retururi', label: 'Retururi', icon: ICONS.returns },
   {

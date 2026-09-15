@@ -493,23 +493,148 @@ function shoptop_cs_backfill(PDO $pdo): array
 }
 
 /** Costul estimat din contract când nu avem preț real (Fan / DPD). */
+/* ---------------------------------------------------------------------------
+ * Tarife (contract): config.php + suprascriere din baza de date
+ * ------------------------------------------------------------------------- */
+
+/** Câmpurile de tarif per curier (fără TVA), în ordinea afișării. */
+function shoptop_cr_rate_fields(string $carrier): array
+{
+    if ($carrier === 'fan-courier') {
+        return [
+            ['key' => 'base_under_3kg', 'label' => 'Tarif de bază (până la greutatea inclusă)', 'unit' => 'lei'],
+            ['key' => 'base_kg', 'label' => 'Greutate inclusă în tariful de bază', 'unit' => 'kg'],
+            ['key' => 'extra_kg', 'label' => 'Kg suplimentar', 'unit' => 'lei/kg'],
+            ['key' => 'obpd_open', 'label' => 'Deschidere colet', 'unit' => 'lei'],
+            ['key' => 'cod_fee', 'label' => 'Ramburs', 'unit' => 'lei'],
+            ['key' => 'saturday_fee', 'label' => 'Livrare sâmbătă', 'unit' => 'lei'],
+            ['key' => 'fuel_index_percent', 'label' => 'Index combustibil', 'unit' => '%'],
+            ['key' => 'vat_percent', 'label' => 'TVA', 'unit' => '%'],
+        ];
+    }
+    return [
+        ['key' => 'door_to_door_under_3kg', 'label' => 'Tarif de bază door-to-door (până la 3 kg)', 'unit' => 'lei'],
+        ['key' => 'extra_kg_under_30', 'label' => 'Kg suplimentar (3–30 kg)', 'unit' => 'lei/kg'],
+        ['key' => 'cod_cash', 'label' => 'Ramburs', 'unit' => 'lei'],
+        ['key' => 'obpd_open', 'label' => 'Deschidere colet', 'unit' => 'lei'],
+        ['key' => 'saturday_fee', 'label' => 'Livrare sâmbătă', 'unit' => 'lei'],
+        ['key' => 'fuel_index_percent', 'label' => 'Index combustibil', 'unit' => '%'],
+        ['key' => 'labor_tax_ron', 'label' => 'Taxă forță de muncă', 'unit' => 'lei'],
+        ['key' => 'vat_percent', 'label' => 'TVA', 'unit' => '%'],
+    ];
+}
+
+/** @return array<string, array{values: array<string, ?float>, source: string}> */
+function shoptop_cr_rates(PDO $pdo): array
+{
+    $settings = shoptop_routing_settings($pdo);
+    $out = [];
+    foreach (['fan-courier', 'dpd'] as $carrier) {
+        $base = $carrier === 'fan-courier' ? shoptop_fan_contract_rates() : shoptop_dpd_contract_rates();
+        $base['saturday_fee'] = 0.0;
+        $override = json_decode((string) ($settings['rates_' . $carrier] ?? ''), true);
+        $source = 'config';
+        if (is_array($override) && $override !== []) {
+            foreach ($override as $k => $v) {
+                if (is_numeric($v)) {
+                    $base[$k] = (float) $v;
+                } elseif ($v === null || $v === '') {
+                    $base[$k] = null;
+                }
+            }
+            $source = 'db';
+        }
+        $values = [];
+        foreach (shoptop_cr_rate_fields($carrier) as $f) {
+            $v = $base[$f['key']] ?? null;
+            $values[$f['key']] = $v === null ? null : (float) $v;
+        }
+        $out[$carrier] = ['values' => $values, 'source' => $source];
+    }
+    return $out;
+}
+
+/** Estimare din contract, total cu TVA (spec 6.2). */
+function shoptop_cr_estimate(array $rates, string $carrier, float $kg, int $parcels, float $cod, bool $opening, bool $saturday): array
+{
+    $v = $rates[$carrier]['values'] ?? [];
+    $kg = max(0.1, $kg);
+    $parcels = max(1, $parcels);
+    $d = [];
+    if ($carrier === 'fan-courier') {
+        $base = (float) ($v['base_under_3kg'] ?? 10);
+        $baseKg = max(0.1, (float) ($v['base_kg'] ?? 3));
+        $d['Tarif de bază'] = $base;
+        if ($kg > $baseKg) {
+            $d['Kg suplimentare'] = ceil($kg - $baseKg) * (float) ($v['extra_kg'] ?? 1);
+        }
+        if ($parcels > 1) {
+            $d['Colete suplimentare'] = ($parcels - 1) * $base;
+        }
+        $sub = array_sum($d);
+        if (($v['fuel_index_percent'] ?? null) !== null && $v['fuel_index_percent'] > 0) {
+            $d['Index combustibil'] = round($sub * $v['fuel_index_percent'] / 100, 2);
+        }
+        if ($opening) {
+            $d['Deschidere colet'] = (float) ($v['obpd_open'] ?? 0);
+        }
+        if ($cod > 0 && ($v['cod_fee'] ?? 0) > 0) {
+            $d['Ramburs'] = (float) $v['cod_fee'];
+        }
+        if ($saturday && ($v['saturday_fee'] ?? 0) > 0) {
+            $d['Sâmbătă'] = (float) $v['saturday_fee'];
+        }
+        $vat = (float) ($v['vat_percent'] ?? 19);
+    } else {
+        $base = (float) ($v['door_to_door_under_3kg'] ?? 8.7);
+        $d['Tarif de bază'] = $base;
+        if ($kg > 3) {
+            $d['Kg suplimentare'] = ceil($kg - 3) * (float) ($v['extra_kg_under_30'] ?? 1.33);
+        }
+        if ($parcels > 1) {
+            $d['Colete suplimentare'] = ($parcels - 1) * $base;
+        }
+        if ($cod > 0) {
+            $d['Ramburs'] = (float) ($v['cod_cash'] ?? 0);
+        }
+        if ($opening && $cod > 0) {
+            $d['Deschidere colet'] = (float) ($v['obpd_open'] ?? 0);
+        }
+        if ($saturday && ($v['saturday_fee'] ?? 0) > 0) {
+            $d['Sâmbătă'] = (float) $v['saturday_fee'];
+        }
+        $sub = array_sum($d);
+        if (($v['fuel_index_percent'] ?? null) !== null && $v['fuel_index_percent'] > 0) {
+            $d['Index combustibil'] = round($sub * $v['fuel_index_percent'] / 100, 2);
+        }
+        if (($v['labor_tax_ron'] ?? null) !== null && $v['labor_tax_ron'] > 0) {
+            $d['Taxă forță de muncă'] = (float) $v['labor_tax_ron'];
+        }
+        $vat = (float) ($v['vat_percent'] ?? 19);
+    }
+    $net = round(array_sum($d), 2);
+    $vatAmt = round($net * $vat / 100, 2);
+    return ['total' => round($net + $vatAmt, 2), 'net' => $net, 'vat' => $vatAmt, 'details' => $d];
+}
+
 function shoptop_cs_estimate_cost(PDO $pdo, array $ship): ?array
 {
-    $weight = (float) $ship['weight_kg'];
-    $parcels = max(1, (int) $ship['parcels']);
-    $cod = (float) $ship['cod_amount'];
-    if ((string) $ship['carrier'] === 'fan-courier') {
-        return shoptop_fan_estimate_from_contract($weight, $parcels, $cod, false);
+    static $rates = null;
+    if ($rates === null) {
+        $rates = shoptop_cr_rates($pdo);
     }
-    $orderStmt = $pdo->prepare('SELECT * FROM orders WHERE id = :id LIMIT 1');
-    $orderStmt->execute(['id' => (string) $ship['order_id']]);
-    $order = $orderStmt->fetch();
-    if (!$order) {
+    $carrier = (string) $ship['carrier'];
+    if (!isset($rates[$carrier])) {
         return null;
     }
-    $itemsStmt = $pdo->prepare('SELECT product_id, product_sku, product_name, quantity FROM order_items WHERE order_id = :id');
-    $itemsStmt->execute(['id' => (string) $ship['order_id']]);
-    $est = shoptop_dpd_estimate_from_contract($order, $itemsStmt->fetchAll());
+    // Deschiderea coletului se deduce din produsele comenzii (ca la emiterea AWB-ului DPD).
+    $opening = false;
+    if ($carrier === 'dpd') {
+        $itemsStmt = $pdo->prepare('SELECT product_id, product_sku, product_name, quantity FROM order_items WHERE order_id = :id');
+        $itemsStmt->execute(['id' => (string) $ship['order_id']]);
+        $opening = shoptop_dpd_order_has_package_opening($itemsStmt->fetchAll());
+    }
+    $est = shoptop_cr_estimate($rates, $carrier, (float) $ship['weight_kg'], max(1, (int) $ship['parcels']), (float) $ship['cod_amount'], $opening, false);
     $est['source'] = 'contract';
     return $est;
 }
