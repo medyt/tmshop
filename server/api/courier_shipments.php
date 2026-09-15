@@ -175,8 +175,11 @@ function shoptop_cs_classify_dpd(int $code, string $desc): array
     switch ($code) {
         case 39:
             return ['type' => 'pickup', 'customer' => false];
-        case 1: case 2: case 11: case 21: case 148:
+        case 1: case 2: case 11: case 21:
             return ['type' => 'transit', 'customer' => false];
+        case 148: // date înregistrate de expeditor (înainte de ridicare)
+        case 181: // întârziere neașteptată / forță majoră (informativ, nu vina clientului)
+            return ['type' => 'info', 'customer' => false];
         case 12: case 175:
             return ['type' => 'out', 'customer' => false];
         case -14:

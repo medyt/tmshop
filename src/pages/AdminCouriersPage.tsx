@@ -130,12 +130,27 @@ export function AdminCouriersPage() {
     setError(null)
     setNotice(null)
     try {
-      const r = kind === 'backfill' ? await backfillShipments() : await syncShipments(true)
+      // Rulează în buclă (câte un lot) până când nu mai rămâne nimic de sincronizat
+      // sau până când un lot nu mai avansează (ex. curier neconfigurat).
+      let imported = 0
+      let synced = 0
+      let errors = 0
+      let pending = 0
+      let lastPending = Number.POSITIVE_INFINITY
+      for (let i = 0; i < 40; i++) {
+        const r = i === 0 && kind === 'backfill' ? await backfillShipments() : await syncShipments(true)
+        imported += r.backfill.inserted
+        synced += r.sync.synced
+        errors += r.sync.errors
+        pending = r.sync.pending
+        setNotice(`Se sincronizează… ${synced} actualizate, ${pending} rămase`)
+        if (pending === 0 || r.sync.synced === 0 || pending >= lastPending) break
+        lastPending = pending
+      }
       const parts: string[] = []
-      if (r.backfill.inserted > 0) parts.push(`${r.backfill.inserted} AWB-uri importate`)
-      if (r.sync.skipped) parts.push('sincronizare recentă, nu s-a repetat')
-      else parts.push(`${r.sync.synced} actualizate${r.sync.errors ? `, ${r.sync.errors} erori` : ''}`)
-      if (r.sync.pending > 0) parts.push(`${r.sync.pending} mai au de sincronizat (rulează din nou)`)
+      if (imported > 0) parts.push(`${imported} AWB-uri importate`)
+      parts.push(`${synced} actualizate${errors ? `, ${errors} erori` : ''}`)
+      if (pending > 0) parts.push(`${pending} rămase (curier neconfigurat sau tracking indisponibil)`)
       setNotice(parts.join(' · '))
       load()
     } catch (err: unknown) {
