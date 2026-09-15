@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
+import { triggerBackgroundCourierSync } from '../../lib/couriersApi'
 import '../../App.css'
 import './AdminLayout.css'
 
@@ -109,6 +110,7 @@ const NAV_MAIN: NavItem[] = [
     match: ['/admin/produse'],
   },
   { to: '/admin/awb', label: 'AWB printare', icon: ICONS.awb },
+  { to: '/admin/curieri', label: 'Curieri', icon: ICONS.awb },
   { to: '/admin/recenzii', label: 'Recenzii', icon: ICONS.reviews },
   { to: '/admin/retururi', label: 'Retururi', icon: ICONS.returns },
   {
@@ -132,6 +134,12 @@ export function AdminLayout({
   const { logout, user } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
   const closeMenu = () => setMenuOpen(false)
+
+  // Tracking-ul curierilor se sincronizează în fundal cât timp admin-ul e deschis
+  // (o dată la 30 min per browser; serverul are propriul throttle).
+  useEffect(() => {
+    triggerBackgroundCourierSync()
+  }, [])
 
   useEffect(() => {
     if (!menuOpen) return

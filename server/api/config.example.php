@@ -176,5 +176,22 @@ return [
         'bank' => '',
         'bank_account' => '',
         'vat_percent' => 19.0,
+        // Tarife contract Fan Courier, FĂRĂ TVA (estimare când nu avem prețul real).
+        'contract_rates' => [
+            'base_under_3kg' => 10.00,     // primele 3 kg
+            'base_kg' => 3,
+            'extra_kg' => 1.00,            // fiecare kg peste 3
+            'obpd_open' => 1.00,           // deschidere colet
+            'cod_fee' => 0.00,             // ramburs (completezi tu)
+        ],
+        // Index combustibil (%) și alte taxe: le completezi tu; null = nu se aplică.
+        'fuel_index_percent' => null,
+    ],
+
+    // Sincronizarea tracking-ului pentru panoul „Curieri” (courier_shipments.php).
+    // Rulează automat din admin la fiecare 30 min; opțional și din cron cPanel:
+    //   https://shop-top.ro/shoptop-api/courier_shipments.php?cron=1&secret=SECRETUL
+    'courier_sync' => [
+        'secret' => '',
     ],
 ];

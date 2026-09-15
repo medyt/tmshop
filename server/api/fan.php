@@ -115,6 +115,70 @@ function shoptop_fan_settings(): array
     ];
 }
 
+/**
+ * Tarife contract Fan (fără TVA) din config → fan → contract_rates.
+ *
+ * @return array{base_under_3kg:float,base_kg:float,extra_kg:float,obpd_open:float,cod_fee:float,fuel_index_percent:?float,vat_percent:float}
+ */
+function shoptop_fan_contract_rates(): array
+{
+    $cfg = shoptop_config()['fan'] ?? [];
+    $rates = is_array($cfg['contract_rates'] ?? null) ? $cfg['contract_rates'] : [];
+    $fuel = $cfg['fuel_index_percent'] ?? null;
+    return [
+        'base_under_3kg' => max(0.0, (float) ($rates['base_under_3kg'] ?? 10.0)),
+        'base_kg' => max(0.1, (float) ($rates['base_kg'] ?? 3)),
+        'extra_kg' => max(0.0, (float) ($rates['extra_kg'] ?? 1.0)),
+        'obpd_open' => max(0.0, (float) ($rates['obpd_open'] ?? 1.0)),
+        'cod_fee' => max(0.0, (float) ($rates['cod_fee'] ?? 0.0)),
+        'fuel_index_percent' => is_numeric($fuel) ? (float) $fuel : null,
+        'vat_percent' => max(0.0, (float) ($cfg['vat_percent'] ?? 19.0)),
+    ];
+}
+
+/**
+ * Estimare Fan din contract (sec. 6.2 din spec): bază pe greutate + kg extra
+ * + combustibil + deschidere colet + ramburs; TVA o singură dată la final.
+ *
+ * @return array{total:float,net:float,vat:float,details:array<string,float>,source:string}
+ */
+function shoptop_fan_estimate_from_contract(
+    float $weightKg,
+    int $parcels = 1,
+    float $codAmount = 0.0,
+    bool $packageOpening = false,
+): array {
+    $r = shoptop_fan_contract_rates();
+    $kg = max(0.1, $weightKg);
+    $details = ['base' => $r['base_under_3kg']];
+    if ($kg > $r['base_kg']) {
+        $details['extra_kg'] = ceil($kg - $r['base_kg']) * $r['extra_kg'];
+    }
+    if ($parcels > 1) {
+        // Colet suplimentar: tarif de bază per colet (nu avem tarif separat în contract).
+        $details['extra_parcels'] = ($parcels - 1) * $r['base_under_3kg'];
+    }
+    $subtotal = array_sum($details);
+    if ($r['fuel_index_percent'] !== null && $r['fuel_index_percent'] > 0) {
+        $details['fuel'] = round($subtotal * $r['fuel_index_percent'] / 100, 2);
+    }
+    if ($packageOpening) {
+        $details['obpd_open'] = $r['obpd_open'];
+    }
+    if ($codAmount > 0 && $r['cod_fee'] > 0) {
+        $details['cod'] = $r['cod_fee'];
+    }
+    $net = round(array_sum($details), 2);
+    $vat = round($net * $r['vat_percent'] / 100, 2);
+    return [
+        'total' => round($net + $vat, 2),
+        'net' => $net,
+        'vat' => $vat,
+        'details' => $details,
+        'source' => 'contract',
+    ];
+}
+
 function shoptop_fan_enabled(): bool
 {
     $s = shoptop_fan_settings();

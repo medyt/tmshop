@@ -75,6 +75,7 @@ Rulează în această ordine (în phpMyAdmin: selectează baza → tab SQL → e
 13. `sql/migrate-delivery-carrier-server.sql` — `delivery_carrier` (DPD / Fan Courier)
 14. `sql/migrate-product-slug-history-server.sql` — `product_slug_history` (adresele vechi ale produselor redirecționează 301 către cea curentă; fără tabel, redirecturile sunt dezactivate, restul merge)
 15. `sql/migrate-customer-meta-server.sql` — `customer_meta` (notițe, blacklist, etichete la Clienți; fără tabel, lista și exportul merg, doar salvarea notițelor e oprită)
+17. `sql/migrate-courier-shipments-server.sql` — `courier_shipments`, `courier_settings`, `routing_settings` (panoul Curieri: tracking real, la timp, retururi; etapa 1 din alocarea automată). Sincronizarea rulează automat din admin la 30 min; opțional cron cPanel: `courier_shipments.php?cron=1&secret=...` cu `courier_sync.secret` din `config.php`. Tarife Fan în `config.php` → `fan.contract_rates` (vezi `config.example.php`).
 16. `sql/migrate-return-awb-server.sql` — coloane `return_awb_*` pe `return_requests` (AWB de ridicare a coletului de retur de la client). Necesită și blocul `return_pickup` în `config.php` (adresa magazinului structurată: județ, localitate, stradă, număr, cod poștal, telefon) — vezi `config.example.php`.
 
 (Pe mediul local rulează echivalentele fără `-server`, începând cu `sql/shoptop.sql`.)

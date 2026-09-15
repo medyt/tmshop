@@ -19,6 +19,7 @@ import { GestiunePage } from './pages/GestiunePage'
 import { ProductEditorPage } from './pages/admin/ProductEditorPage'
 import { AdminCustomersPage } from './pages/AdminCustomersPage'
 import { AdminOrderImportPage } from './pages/AdminOrderImportPage'
+import { AdminCouriersPage } from './pages/AdminCouriersPage'
 import { LoginPage } from './pages/LoginPage'
 import { CustomerOrdersPage } from './pages/CustomerOrdersPage'
 import { OrderSuccessPage } from './pages/OrderSuccessPage'
@@ -143,6 +144,14 @@ function AppRoutes() {
             element={
               <AdminRoute>
                 <AdminOrderImportPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/curieri"
+            element={
+              <AdminRoute>
+                <AdminCouriersPage />
               </AdminRoute>
             }
           />
