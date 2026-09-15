@@ -180,10 +180,14 @@ return [
         'contract_rates' => [
             'base_under_3kg' => 10.00,     // primele 3 kg
             'base_kg' => 3,
-            'extra_kg' => 1.00,            // fiecare kg peste 3
-            'obpd_open' => 1.00,           // deschidere colet
-            'cod_fee' => 0.00,             // ramburs (completezi tu)
+            'extra_kg' => 0.85,            // fiecare kg peste 3 (contract 2730/23.06.2026)
+            'extra_kg_over_30' => 3.50,    // transport marfă, peste 30 kg
+            'extra_parcel' => 0.00,        // taxă multiparcel
+            'obpd_open' => 1.00,           // deschidere la livrare
+            'cod_fee' => 1.00,             // ramburs cont colector
+            'saturday_fee' => 7.00,        // livrare sâmbătă
         ],
+        // Tarifele pot fi editate și din admin (Curieri → Tarife curieri); acelea au prioritate.
         // Index combustibil (%) și alte taxe: le completezi tu; null = nu se aplică.
         'fuel_index_percent' => null,
     ],

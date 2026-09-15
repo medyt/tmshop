@@ -500,27 +500,32 @@ function shoptop_cs_backfill(PDO $pdo): array
 /** Câmpurile de tarif per curier (fără TVA), în ordinea afișării. */
 function shoptop_cr_rate_fields(string $carrier): array
 {
+    // Valorile implicite = contractele TM SHOP SRL (Fan Courier nr. 2730/23.06.2026, anexa DPD 5.001–10.000 expedieri/lună), fără TVA.
     if ($carrier === 'fan-courier') {
         return [
-            ['key' => 'base_under_3kg', 'label' => 'Tarif de bază (până la greutatea inclusă)', 'unit' => 'lei'],
-            ['key' => 'base_kg', 'label' => 'Greutate inclusă în tariful de bază', 'unit' => 'kg'],
-            ['key' => 'extra_kg', 'label' => 'Kg suplimentar', 'unit' => 'lei/kg'],
-            ['key' => 'obpd_open', 'label' => 'Deschidere colet', 'unit' => 'lei'],
-            ['key' => 'cod_fee', 'label' => 'Ramburs', 'unit' => 'lei'],
-            ['key' => 'saturday_fee', 'label' => 'Livrare sâmbătă', 'unit' => 'lei'],
-            ['key' => 'fuel_index_percent', 'label' => 'Index combustibil', 'unit' => '%'],
-            ['key' => 'vat_percent', 'label' => 'TVA', 'unit' => '%'],
+            ['key' => 'base_under_3kg', 'label' => 'Standard: primele 3 kg (plic < 0,5 kg tot 10)', 'unit' => 'lei', 'default' => 10.00],
+            ['key' => 'base_kg', 'label' => 'Greutate inclusă în tariful de bază', 'unit' => 'kg', 'default' => 3],
+            ['key' => 'extra_kg', 'label' => 'Kg suplimentar (3–30 kg)', 'unit' => 'lei/kg', 'default' => 0.85],
+            ['key' => 'extra_kg_over_30', 'label' => 'Kg suplimentar peste 30 kg (transport marfă)', 'unit' => 'lei/kg', 'default' => 3.50],
+            ['key' => 'extra_parcel', 'label' => 'Taxă multiparcel (per colet suplimentar)', 'unit' => 'lei', 'default' => 0.00],
+            ['key' => 'cod_fee', 'label' => 'Ramburs cont colector', 'unit' => 'lei', 'default' => 1.00],
+            ['key' => 'obpd_open', 'label' => 'Deschidere la livrare', 'unit' => 'lei', 'default' => 1.00],
+            ['key' => 'saturday_fee', 'label' => 'Livrare sâmbătă', 'unit' => 'lei', 'default' => 7.00],
+            ['key' => 'fuel_index_percent', 'label' => 'Index combustibil', 'unit' => '%', 'default' => null],
+            ['key' => 'vat_percent', 'label' => 'TVA', 'unit' => '%', 'default' => 19.0],
         ];
     }
     return [
-        ['key' => 'door_to_door_under_3kg', 'label' => 'Tarif de bază door-to-door (până la 3 kg)', 'unit' => 'lei'],
-        ['key' => 'extra_kg_under_30', 'label' => 'Kg suplimentar (3–30 kg)', 'unit' => 'lei/kg'],
-        ['key' => 'cod_cash', 'label' => 'Ramburs', 'unit' => 'lei'],
-        ['key' => 'obpd_open', 'label' => 'Deschidere colet', 'unit' => 'lei'],
-        ['key' => 'saturday_fee', 'label' => 'Livrare sâmbătă', 'unit' => 'lei'],
-        ['key' => 'fuel_index_percent', 'label' => 'Index combustibil', 'unit' => '%'],
-        ['key' => 'labor_tax_ron', 'label' => 'Taxă forță de muncă', 'unit' => 'lei'],
-        ['key' => 'vat_percent', 'label' => 'TVA', 'unit' => '%'],
+        ['key' => 'door_to_door_under_3kg', 'label' => 'Door to door, până la 3 kg', 'unit' => 'lei', 'default' => 8.70],
+        ['key' => 'extra_kg_under_30', 'label' => 'Kg adițional (3–30 kg)', 'unit' => 'lei/kg', 'default' => 1.33],
+        ['key' => 'extra_kg_over_30', 'label' => 'Kg adițional peste 30 kg', 'unit' => 'lei/kg', 'default' => 1.97],
+        ['key' => 'extra_parcel', 'label' => 'Colet suplimentar în partidă', 'unit' => 'lei', 'default' => 1.07],
+        ['key' => 'cod_cash', 'label' => 'Ramburs (COD plată numerar)', 'unit' => 'lei', 'default' => 1.00],
+        ['key' => 'obpd_open', 'label' => 'Deschidere colet la livrare', 'unit' => 'lei', 'default' => 1.60],
+        ['key' => 'saturday_fee', 'label' => 'Livrare sâmbătă', 'unit' => 'lei', 'default' => 0.00],
+        ['key' => 'fuel_index_percent', 'label' => 'Index combustibil', 'unit' => '%', 'default' => null],
+        ['key' => 'labor_tax_ron', 'label' => 'Taxă forță de muncă', 'unit' => 'lei', 'default' => null],
+        ['key' => 'vat_percent', 'label' => 'TVA', 'unit' => '%', 'default' => 19.0],
     ];
 }
 
@@ -530,8 +535,25 @@ function shoptop_cr_rates(PDO $pdo): array
     $settings = shoptop_routing_settings($pdo);
     $out = [];
     foreach (['fan-courier', 'dpd'] as $carrier) {
-        $base = $carrier === 'fan-courier' ? shoptop_fan_contract_rates() : shoptop_dpd_contract_rates();
-        $base['saturday_fee'] = 0.0;
+        // Ordinea: valorile din contract (implicite) < config.php < tarifele salvate din admin.
+        $base = [];
+        foreach (shoptop_cr_rate_fields($carrier) as $f) {
+            $base[$f['key']] = $f['default'];
+        }
+        $cfgRates = is_array(shoptop_config()[$carrier === 'fan-courier' ? 'fan' : 'dpd']['contract_rates'] ?? null)
+            ? shoptop_config()[$carrier === 'fan-courier' ? 'fan' : 'dpd']['contract_rates']
+            : [];
+        foreach ($cfgRates as $k => $v) {
+            if (is_numeric($v)) {
+                $base[$k] = (float) $v;
+            }
+        }
+        $cfgCarrier = $carrier === 'fan-courier' ? shoptop_fan_contract_rates() : shoptop_dpd_contract_rates();
+        foreach (['fuel_index_percent', 'labor_tax_ron', 'vat_percent'] as $k) {
+            if (array_key_exists($k, $cfgCarrier) && $cfgCarrier[$k] !== null) {
+                $base[$k] = (float) $cfgCarrier[$k];
+            }
+        }
         $override = json_decode((string) ($settings['rates_' . $carrier] ?? ''), true);
         $source = 'config';
         if (is_array($override) && $override !== []) {
@@ -566,10 +588,13 @@ function shoptop_cr_estimate(array $rates, string $carrier, float $kg, int $parc
         $baseKg = max(0.1, (float) ($v['base_kg'] ?? 3));
         $d['Tarif de bază'] = $base;
         if ($kg > $baseKg) {
-            $d['Kg suplimentare'] = ceil($kg - $baseKg) * (float) ($v['extra_kg'] ?? 1);
+            $d['Kg suplimentare'] = ceil(min($kg, 30) - $baseKg) * (float) ($v['extra_kg'] ?? 0.85);
         }
-        if ($parcels > 1) {
-            $d['Colete suplimentare'] = ($parcels - 1) * $base;
+        if ($kg > 30) {
+            $d['Kg peste 30'] = ceil($kg - 30) * (float) ($v['extra_kg_over_30'] ?? 3.5);
+        }
+        if ($parcels > 1 && ($v['extra_parcel'] ?? 0) > 0) {
+            $d['Colete suplimentare'] = ($parcels - 1) * (float) $v['extra_parcel'];
         }
         $sub = array_sum($d);
         if (($v['fuel_index_percent'] ?? null) !== null && $v['fuel_index_percent'] > 0) {
@@ -589,10 +614,13 @@ function shoptop_cr_estimate(array $rates, string $carrier, float $kg, int $parc
         $base = (float) ($v['door_to_door_under_3kg'] ?? 8.7);
         $d['Tarif de bază'] = $base;
         if ($kg > 3) {
-            $d['Kg suplimentare'] = ceil($kg - 3) * (float) ($v['extra_kg_under_30'] ?? 1.33);
+            $d['Kg suplimentare'] = ceil(min($kg, 30) - 3) * (float) ($v['extra_kg_under_30'] ?? 1.33);
         }
-        if ($parcels > 1) {
-            $d['Colete suplimentare'] = ($parcels - 1) * $base;
+        if ($kg > 30) {
+            $d['Kg peste 30'] = ceil($kg - 30) * (float) ($v['extra_kg_over_30'] ?? 1.97);
+        }
+        if ($parcels > 1 && ($v['extra_parcel'] ?? 0) > 0) {
+            $d['Colete suplimentare'] = ($parcels - 1) * (float) $v['extra_parcel'];
         }
         if ($cod > 0) {
             $d['Ramburs'] = (float) ($v['cod_cash'] ?? 0);

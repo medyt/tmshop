@@ -128,9 +128,10 @@ function shoptop_fan_contract_rates(): array
     return [
         'base_under_3kg' => max(0.0, (float) ($rates['base_under_3kg'] ?? 10.0)),
         'base_kg' => max(0.1, (float) ($rates['base_kg'] ?? 3)),
-        'extra_kg' => max(0.0, (float) ($rates['extra_kg'] ?? 1.0)),
+        // Contract Fan Courier nr. 2730/23.06.2026: 0,85 lei/kg peste 3 kg, ramburs cont colector 1 leu.
+        'extra_kg' => max(0.0, (float) ($rates['extra_kg'] ?? 0.85)),
         'obpd_open' => max(0.0, (float) ($rates['obpd_open'] ?? 1.0)),
-        'cod_fee' => max(0.0, (float) ($rates['cod_fee'] ?? 0.0)),
+        'cod_fee' => max(0.0, (float) ($rates['cod_fee'] ?? 1.0)),
         'fuel_index_percent' => is_numeric($fuel) ? (float) $fuel : null,
         'vat_percent' => max(0.0, (float) ($cfg['vat_percent'] ?? 19.0)),
     ];
