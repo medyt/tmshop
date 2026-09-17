@@ -7,6 +7,7 @@ import {
   fetchProducts,
   isProductsApiEnabled,
   replaceAllProductsRemote,
+  setProductSalesDisabled,
   updateProductRemote,
 } from '../lib/productsApi'
 import { loadProducts, saveProducts } from '../lib/storage'
@@ -192,6 +193,30 @@ export function useProducts() {
     [apiEnabled],
   )
 
+  /** Oprește / pornește vânzarea (acțiune imediată pe server). */
+  const setSalesDisabled = useCallback(
+    async (id: string, disabled: boolean): Promise<Product> => {
+      if (!apiEnabled) {
+        let updated: Product | undefined
+        setProducts((prev) =>
+          prev.map((x) => {
+            if (x.id !== id) return x
+            updated = { ...x, salesDisabled: disabled || undefined }
+            return updated
+          }),
+        )
+        if (!updated) throw new Error('Produsul nu a fost găsit.')
+        return updated
+      }
+      const saved = await setProductSalesDisabled(id, disabled)
+      const light = withoutHeavyFields(saved)
+      setProducts((prev) => prev.map((x) => (x.id === light.id ? light : x)))
+      setError(null)
+      return saved
+    },
+    [apiEnabled],
+  )
+
   const replaceAll = useCallback(
     (next: Product[]) => {
       if (apiEnabled) {
@@ -225,5 +250,6 @@ export function useProducts() {
     deleteProduct,
     replaceAll,
     reloadProducts,
+    setSalesDisabled,
   }
 }

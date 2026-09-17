@@ -841,3 +841,26 @@
     animation: none;
   }
 }
+
+/* Vânzare oprită manual */
+.pe-status--stop {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
+.pe-status--stop .pe-status__dot {
+  background: #dc2626;
+}
+
+.pe-sales {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding-top: 0.6rem;
+  border-top: 1px dashed var(--border);
+}
+
+.pe-sales__btn {
+  align-self: flex-start;
+}

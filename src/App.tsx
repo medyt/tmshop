@@ -106,6 +106,7 @@ function AppRoutes() {
                   replaceAll={productApi.replaceAll}
                   reloadProducts={productApi.reloadProducts}
                   deleteProduct={productApi.deleteProduct}
+                  setSalesDisabled={productApi.setSalesDisabled}
                 />
               </AdminRoute>
             }
@@ -118,6 +119,7 @@ function AppRoutes() {
                   products={productApi.products}
                   saveProduct={productApi.saveProduct}
                   deleteProduct={productApi.deleteProduct}
+                  setSalesDisabled={productApi.setSalesDisabled}
                 />
               </AdminRoute>
             }
@@ -130,6 +132,7 @@ function AppRoutes() {
                   products={productApi.products}
                   saveProduct={productApi.saveProduct}
                   deleteProduct={productApi.deleteProduct}
+                  setSalesDisabled={productApi.setSalesDisabled}
                 />
               </AdminRoute>
             }

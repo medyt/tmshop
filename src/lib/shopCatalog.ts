@@ -44,13 +44,19 @@ export function isVirtualProduct(product: Product): boolean {
 
 export function isListedInShop(product: Product): boolean {
   if (isVirtualProduct(product)) return false
-  // Stoc 0 rămâne listat: combo-uri / gestiune manuală; comenzile se procesează separat.
+  // Vânzare oprită din admin: nu apare în catalog și nu intră în coș.
+  if (product.salesDisabled) return false
+  // Stoc 0 rămâne listat (afișat „Stoc epuizat”); checkout-ul refuză comanda.
   return product.salePrice > 0
 }
 
-/** @deprecated Folosește `isListedInShop` — același criteriu (inclusiv stoc 0). */
+/**
+ * Pagina produsului rămâne accesibilă și cu vânzarea oprită (link-uri din reclame,
+ * Google): arată „Stoc epuizat” în loc de 404.
+ */
 export function isViewableInShop(product: Product): boolean {
-  return isListedInShop(product)
+  if (isVirtualProduct(product)) return false
+  return product.salePrice > 0
 }
 
 export function availableStock(product: Product): number {
@@ -67,14 +73,16 @@ function hashProductId(productId: string): number {
 }
 
 /**
- * Stoc afișat clientului (4–10, stabil per produs).
- * Chiar dacă stocul intern e 0 (combo / încă nesincronizat), permitem afișare + comandă.
+ * Stoc afișat clientului (4–10, stabil per produs, niciodată peste stocul real).
+ * Fără stoc vandabil (epuizat, rezervat de alte comenzi sau vânzare oprită) → 0:
+ * serverul refuză oricum comanda, deci nu mai promitem bucăți.
  */
 export function displayStock(product: Product): number {
+  if (product.salesDisabled) return 0
   const real = availableStock(product)
+  if (real <= 0) return 0
   const id = product.id.trim()
   const fake = id ? 4 + (hashProductId(id) % 7) : 4
-  if (real <= 0) return fake
   return Math.min(real, fake)
 }
 

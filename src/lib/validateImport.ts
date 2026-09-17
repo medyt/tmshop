@@ -146,6 +146,11 @@ export function parseProductRecord(o: Record<string, unknown>): Product | null {
         : undefined,
     notes: typeof o.notes === 'string' ? o.notes : undefined,
     bundleOffers: parseBundleOffers(o),
+    salesDisabled: o.salesDisabled === true ? true : undefined,
+    reservedQty:
+      typeof o.reservedQty === 'number' && Number.isFinite(o.reservedQty)
+        ? Math.max(0, Math.floor(o.reservedQty))
+        : undefined,
   }
 }
 

@@ -107,6 +107,9 @@ function shoptop_seo_find_product(PDO $pdo, string $ref): ?array
     }
 
     $fields = 'id, name, slug, category, sku, brand, sale_price, discount_percent, stock_qty, image_urls, description';
+    if (shoptop_seo_column_exists($pdo, 'products', 'sales_disabled')) {
+        $fields .= ', sales_disabled';
+    }
     // PDO/MySQL: același named param nu poate apărea de două ori (:ref OR :ref → HY093).
     $stmt = $pdo->prepare(
         "SELECT {$fields} FROM products WHERE id = :ref_id OR slug = :ref_slug LIMIT 1"

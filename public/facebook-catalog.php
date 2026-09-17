@@ -27,7 +27,7 @@ if ($apiDir !== null) {
     try {
         $pdo = shoptop_pdo();
         $fields = 'id, name, slug, category, sku, brand, sale_price, stock_qty, image_urls, description';
-        foreach (['ean', 'google_category', 'discount_percent', 'purchase_price'] as $extra) {
+        foreach (['ean', 'google_category', 'discount_percent', 'purchase_price', 'sales_disabled'] as $extra) {
             if (shoptop_seo_column_exists($pdo, 'products', $extra)) {
                 $fields .= ', ' . $extra;
             }
@@ -45,10 +45,14 @@ if ($apiDir !== null) {
                 $products[] = $row;
             }
         }
+        if (function_exists('shoptop_reserved_stock_map')) {
+            $reserved = shoptop_reserved_stock_map($pdo);
+        }
     } catch (Throwable $e) {
         $products = [];
     }
 }
+$reserved = $reserved ?? [];
 
 $site = shoptop_seo_site_url();
 $columns = [
@@ -127,9 +131,13 @@ foreach ($products as $row) {
         continue;
     }
 
-    $stock = max(0, (int) ($row['stock_qty'] ?? 0));
-    // Combo / stoc intern 0: tot listăm ca „in stock” (comenzile se gestionează manual).
-    $qtyForFeed = $stock > 0 ? $stock : 5;
+    // Stoc vandabil = stoc minus comenzile neambalate; 0 dacă vânzarea e oprită din admin.
+    // Fără stoc vandabil, checkout-ul refuză comanda, deci reclama nu trebuie să mai ruleze.
+    $stock = function_exists('shoptop_sellable_stock')
+        ? shoptop_sellable_stock($row, $reserved)
+        : (!empty($row['sales_disabled']) ? 0 : max(0, (int) ($row['stock_qty'] ?? 0)));
+    $qtyForFeed = $stock;
+    $availability = $stock > 0 ? 'in stock' : 'out of stock';
     $description = shoptop_seo_clip(
         shoptop_seo_plain_text((string) ($row['description'] ?? ''), 9999) ?: $title,
         9999,
@@ -154,7 +162,7 @@ foreach ($products as $row) {
         'id' => $catalogId,
         'title' => $title,
         'description' => $description,
-        'availability' => 'in stock',
+        'availability' => $availability,
         'condition' => 'new',
         'price' => number_format($compareAt ?? $sale, 2, '.', '') . ' RON',
         'link' => $site . shoptop_seo_product_path($row),

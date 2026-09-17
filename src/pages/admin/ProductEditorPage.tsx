@@ -39,6 +39,7 @@ type Props = {
   products: Product[]
   saveProduct: (p: Product) => Promise<Product>
   deleteProduct: (id: string) => Promise<void>
+  setSalesDisabled: (id: string, disabled: boolean) => Promise<Product>
 }
 
 type LoadState =
@@ -94,7 +95,7 @@ export function ProductEditorPage(props: Props) {
 
 type EditorProps = Props & { productId?: string }
 
-function ProductEditor({ products, saveProduct, deleteProduct, productId }: EditorProps) {
+function ProductEditor({ products, saveProduct, deleteProduct, setSalesDisabled, productId }: EditorProps) {
   const navigate = useNavigate()
   const location = useLocation()
   const isNew = !productId
@@ -147,6 +148,8 @@ function ProductEditor({ products, saveProduct, deleteProduct, productId }: Edit
   const [showIssues, setShowIssues] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [confirmSales, setConfirmSales] = useState(false)
+  const [togglingSales, setTogglingSales] = useState(false)
   const nameRef = useRef<HTMLInputElement>(null)
 
   // Duplicare cu API: aducem produsul sursă complet (cu descriere).
@@ -207,7 +210,12 @@ function ProductEditor({ products, saveProduct, deleteProduct, productId }: Edit
     () => normalizeProductDraft(draft, productId ?? 'draft'),
     [draft, productId],
   )
-  const listed = isListedInShop(preview)
+  const existingForSales = load.kind === 'ready' ? load.product : null
+  // „Vânzare oprită” vine din server (nu face parte din formular).
+  const salesStopped = Boolean(existingForSales?.salesDisabled)
+  const listed = isListedInShop(preview) && !salesStopped
+  const reservedQty = existingForSales?.reservedQty ?? 0
+  const sellableQty = salesStopped ? 0 : Math.max(0, (preview.stockQty ?? 0) - reservedQty)
   const profit = preview.salePrice - preview.purchasePrice
   const marginPct = preview.salePrice > 0 ? (profit / preview.salePrice) * 100 : null
   const compareAt =
@@ -314,6 +322,34 @@ function ProductEditor({ products, saveProduct, deleteProduct, productId }: Edit
     }
   }
 
+  async function handleToggleSales() {
+    if (!productId || togglingSales || load.kind !== 'ready') return
+    const disable = !salesStopped
+    setTogglingSales(true)
+    try {
+      const updated = await setSalesDisabled(productId, disable)
+      // Actualizăm doar starea vânzării și rezervările; formularul (poate nesalvat) rămâne.
+      setLoad({
+        kind: 'ready',
+        product: {
+          ...load.product,
+          salesDisabled: updated.salesDisabled,
+          reservedQty: updated.reservedQty,
+        },
+      })
+      setFlash(
+        disable
+          ? 'Vânzarea e oprită: produsul nu mai apare în magazin, iar feed-urile trimit stoc 0.'
+          : 'Vânzarea a fost reluată.',
+      )
+    } catch (err: unknown) {
+      setSaveError(err instanceof Error ? err.message : 'Nu am putut schimba starea vânzării.')
+    } finally {
+      setTogglingSales(false)
+      setConfirmSales(false)
+    }
+  }
+
   async function handleDelete() {
     if (!productId || deleting) return
     setDeleting(true)
@@ -395,9 +431,9 @@ function ProductEditor({ products, saveProduct, deleteProduct, productId }: Edit
           <Link to="/admin/gestiune" className="pe-back">
             <span aria-hidden="true">←</span> Toate produsele
           </Link>
-          <span className={`pe-status pe-status--${listed ? 'on' : 'off'}`}>
+          <span className={`pe-status pe-status--${listed ? 'on' : salesStopped ? 'stop' : 'off'}`}>
             <span className="pe-status__dot" aria-hidden="true" />
-            {listed ? 'Vizibil în magazin' : 'Ascuns din magazin'}
+            {listed ? 'Vizibil în magazin' : salesStopped ? 'Vânzare oprită' : 'Ascuns din magazin'}
           </span>
           {existing?.sku ? <span className="pe-chip">SKU {existing.sku}</span> : null}
         </div>
@@ -644,7 +680,17 @@ function ProductEditor({ products, saveProduct, deleteProduct, productId }: Edit
                     value={draft.stockQty ?? 0}
                     onChange={(e) => patch('stockQty', Math.max(0, Math.floor(toNumber(e.target.value))))}
                   />
-                  <span className="pe-hint">Se suprascrie la sincronizarea cu SmartBill.</span>
+                  <span className="pe-hint">
+                    Bucăți pe raft, încă neambalate. Se suprascrie la sincronizarea cu SmartBill.
+                  </span>
+                  {existing ? (
+                    <span className={`pe-hint${sellableQty <= 0 ? ' pe-hint--warn' : ''}`}>
+                      {reservedQty > 0
+                        ? `${reservedQty} rezervate în comenzi neambalate · ${sellableQty} de vânzare`
+                        : `${sellableQty} de vânzare`}
+                      {salesStopped ? ' (vânzare oprită)' : ''}
+                    </span>
+                  ) : null}
                 </label>
               </div>
             </section>
@@ -660,17 +706,38 @@ function ProductEditor({ products, saveProduct, deleteProduct, productId }: Edit
           <aside className="pe-side">
             <section className="pe-card">
               <h2 className="pe-card__title">Status</h2>
-              <p className={`pe-status pe-status--${listed ? 'on' : 'off'} pe-status--block`}>
+              <p className={`pe-status pe-status--${listed ? 'on' : salesStopped ? 'stop' : 'off'} pe-status--block`}>
                 <span className="pe-status__dot" aria-hidden="true" />
-                {listed ? 'Vizibil în magazin' : 'Ascuns din magazin'}
+                {listed ? 'Vizibil în magazin' : salesStopped ? 'Vânzare oprită' : 'Ascuns din magazin'}
               </p>
               <p className="pe-hint">
-                {listed
-                  ? 'Produsul apare în catalog și poate fi comandat.'
-                  : isVirtualProductId(preview.id, preview.sku)
-                    ? 'Produs de sistem (addon checkout): nu apare în catalog.'
-                    : 'Setează un preț de vânzare mai mare decât 0 ca să apară în catalog.'}
+                {salesStopped
+                  ? 'Nu apare în catalog, checkout-ul refuză comenzile, iar feed-urile Facebook / Google și BaseLinker primesc stoc 0. Pagina produsului arată „Stoc epuizat”.'
+                  : listed
+                    ? 'Produsul apare în catalog și poate fi comandat.'
+                    : isVirtualProductId(preview.id, preview.sku)
+                      ? 'Produs de sistem (addon checkout): nu apare în catalog.'
+                      : 'Setează un preț de vânzare mai mare decât 0 ca să apară în catalog.'}
               </p>
+              {existing && isProductsApiEnabled() && !isVirtualProductId(existing.id, existing.sku) ? (
+                <div className="pe-sales">
+                  <button
+                    type="button"
+                    className={`btn ${salesStopped ? 'primary' : 'secondary'} pe-sales__btn`}
+                    disabled={togglingSales}
+                    onClick={() => setConfirmSales(true)}
+                  >
+                    {togglingSales
+                      ? 'Se aplică…'
+                      : salesStopped
+                        ? 'Reia vânzarea'
+                        : 'Indisponibilizează vânzarea'}
+                  </button>
+                  <span className="pe-hint">
+                    Se aplică imediat, fără „Salvează”. Folosește-l când produsul nu mai e în depozit.
+                  </span>
+                </div>
+              ) : null}
               {warnings.length > 0 ? (
                 <ul className="pe-checklist" aria-label="De completat">
                   {warnings.map((w) => (
@@ -852,6 +919,23 @@ function ProductEditor({ products, saveProduct, deleteProduct, productId }: Edit
           </div>
         </div>
       </form>
+
+      <ConfirmModal
+        open={confirmSales}
+        tone={salesStopped ? 'default' : 'warning'}
+        title={salesStopped ? 'Reiei vânzarea?' : 'Oprești vânzarea?'}
+        description={
+          salesStopped
+            ? `„${existing?.name ?? ''}” revine în magazin și în feed-uri, cu stocul din gestiune.`
+            : `„${existing?.name ?? ''}” dispare din catalog, checkout-ul refuză comenzile noi, iar feed-urile Facebook / Google și BaseLinker primesc stoc 0. Comenzile deja primite rămân neschimbate.`
+        }
+        confirmLabel={salesStopped ? 'Reia vânzarea' : 'Oprește vânzarea'}
+        busy={togglingSales}
+        onCancel={() => setConfirmSales(false)}
+        onConfirm={() => {
+          void handleToggleSales()
+        }}
+      />
 
       <ConfirmModal
         open={confirmDelete}

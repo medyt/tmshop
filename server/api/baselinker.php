@@ -186,8 +186,16 @@ function shoptop_baselinker_sync_product(PDO $pdo, array $product): void
             ];
         }
         if ($s['warehouse_id'] !== '') {
+            // Vânzare oprită din admin → stoc 0 și în BaseLinker (flag-ul se citește din DB,
+            // pentru că salvarea din editor nu îl trimite).
+            $salesDisabled = false;
+            if (shoptop_products_has_sales_disabled($pdo)) {
+                $flag = $pdo->prepare('SELECT sales_disabled FROM products WHERE id = :id LIMIT 1');
+                $flag->execute(['id' => $productId]);
+                $salesDisabled = (int) $flag->fetchColumn() === 1;
+            }
             $params['stock'] = [
-                $s['warehouse_id'] => (int) ($product['stock_qty'] ?? 0),
+                $s['warehouse_id'] => $salesDisabled ? 0 : (int) ($product['stock_qty'] ?? 0),
             ];
         }
 

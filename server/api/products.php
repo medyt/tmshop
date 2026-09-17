@@ -22,6 +22,9 @@ $detailFieldsForSave = 'id, name, slug, category, sku, ean, brand, google_catego
 if (shoptop_products_has_bundle_offers($pdo)) {
     $detailFieldsForSave .= ', bundle_offers';
 }
+if (shoptop_products_has_sales_disabled($pdo)) {
+    $detailFieldsForSave .= ', sales_disabled';
+}
 
 function shoptop_column_exists(PDO $pdo, string $table, string $column): bool
 {
@@ -117,6 +120,12 @@ if ($method === 'GET') {
         $listFields .= ', bundle_offers';
         $detailFields .= ', bundle_offers';
     }
+    if (shoptop_products_has_sales_disabled($pdo)) {
+        $listFields .= ', sales_disabled';
+        $detailFields .= ', sales_disabled';
+    }
+    // Comenzi primite, încă neambalate: stocul lor e deja promis clienților.
+    $reserved = shoptop_reserved_stock_map($pdo);
 
     if ($productId !== '') {
         $stmt = $pdo->prepare('SELECT ' . $detailFields . ' FROM products WHERE id = :id LIMIT 1');
@@ -147,9 +156,10 @@ if ($method === 'GET') {
         if ($isAdmin) {
             $product = shoptop_row_to_product($row);
             $product['previousSlugs'] = shoptop_product_previous_slugs($pdo, (string) $row['id']);
+            $product['reservedQty'] = (int) ($reserved[(string) $row['id']] ?? 0);
             shoptop_json_response($product);
         }
-        shoptop_json_response(shoptop_row_to_shop_product($row));
+        shoptop_json_response(shoptop_row_to_shop_product($row, $reserved));
     }
 
     $includeHeavyText = $wantFull && $isAdmin;
@@ -162,8 +172,8 @@ if ($method === 'GET') {
             continue;
         }
         $product = $isAdmin
-            ? shoptop_row_to_product($row)
-            : shoptop_row_to_shop_product($row);
+            ? shoptop_row_to_product($row) + ['reservedQty' => (int) ($reserved[(string) $row['id']] ?? 0)]
+            : shoptop_row_to_shop_product($row, $reserved);
         // Catalog public: o singură imagine (galeria completă vine pe ?id= / slug).
         if (!$isAdmin && isset($product['imageUrls']) && is_array($product['imageUrls'])) {
             $product['imageUrls'] = array_slice($product['imageUrls'], 0, 1);
@@ -178,6 +188,36 @@ if ($method === 'POST') {
     $body = shoptop_read_json_body();
     if (!is_array($body)) {
         shoptop_json_error('Corpul cererii trebuie sa fie un produs JSON.', 400);
+    }
+
+    // Oprește / pornește vânzarea unui produs (magazin, checkout, feed-uri, BaseLinker).
+    if (trim((string) ($body['action'] ?? '')) === 'setSalesDisabled') {
+        if (!shoptop_products_has_sales_disabled($pdo)) {
+            shoptop_json_error('Rulează migrarea sql/migrate-product-sales-disabled-server.sql.', 409);
+        }
+        $id = trim((string) ($body['id'] ?? ''));
+        if ($id === '') {
+            shoptop_json_error('Produsul lipsește.', 400);
+        }
+        $disabled = !empty($body['disabled']);
+        $upd = $pdo->prepare('UPDATE products SET sales_disabled = :d WHERE id = :id');
+        $upd->execute(['d' => $disabled ? 1 : 0, 'id' => $id]);
+        $stmt = $pdo->prepare('SELECT ' . $detailFieldsForSave . ' FROM products WHERE id = :id LIMIT 1');
+        $stmt->execute(['id' => $id]);
+        $row = $stmt->fetch();
+        if (!$row) {
+            shoptop_json_error('Produsul nu a fost gasit.', 404);
+        }
+        // Stocul din BaseLinker urmează imediat (0 cât timp vânzarea e oprită).
+        try {
+            shoptop_baselinker_sync_product($pdo, $row);
+        } catch (Throwable $e) {
+            error_log('BaseLinker dupa oprire vanzare ' . $id . ': ' . $e->getMessage());
+        }
+        $out = shoptop_row_to_product($row);
+        $out['reservedQty'] = (int) (shoptop_reserved_stock_map($pdo)[$id] ?? 0);
+        $out['previousSlugs'] = shoptop_product_previous_slugs($pdo, $id);
+        shoptop_json_response($out);
     }
 
     if (trim((string) ($body['action'] ?? '')) === 'syncSmartbillStock') {
@@ -227,6 +267,7 @@ if ($method === 'PUT') {
     $row = $stmt->fetch() ?: $product;
     $out = shoptop_row_to_product($row);
     $out['previousSlugs'] = shoptop_product_previous_slugs($pdo, (string) $product['id']);
+    $out['reservedQty'] = (int) (shoptop_reserved_stock_map($pdo)[(string) $product['id']] ?? 0);
     shoptop_json_response($out);
 }
 

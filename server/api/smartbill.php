@@ -419,6 +419,50 @@ function shoptop_uninvoiced_in_transit_qty(PDO $pdo): array
         }
         $out[$id] = (int) ($row['qty'] ?? 0);
     }
+
+    // Retururi încă pe drum spre depozit: SmartBill le vede deja pe raft (refuzul nu
+    // a fost facturat niciodată, iar returul după livrare e stornat imediat), dar
+    // coletul nu a ajuns. Le scădem până la recepție.
+    if (shoptop_column_exists_smartbill($pdo, 'orders', 'return_received')) {
+        $ret = $pdo->query(
+            "SELECT oi.product_id AS product_id, SUM(oi.quantity) AS qty
+             FROM order_items oi
+             INNER JOIN orders o ON o.id = oi.order_id
+             WHERE o.status = 'returned' AND o.return_received = 0
+             GROUP BY oi.product_id"
+        );
+        foreach ($ret === false ? [] : $ret->fetchAll() as $row) {
+            $id = (string) ($row['product_id'] ?? '');
+            if ($id === '' || shoptop_is_virtual_product_id($id)) {
+                continue;
+            }
+            $out[$id] = ($out[$id] ?? 0) + (int) ($row['qty'] ?? 0);
+        }
+    }
+    return $out;
+}
+
+/**
+ * Produse facturate cel puțin o dată prin SmartBill: codul lor există sigur în
+ * nomenclator, deci lipsa din lista de stocuri înseamnă stoc 0 acolo.
+ *
+ * @return array<string,true> product_id => true
+ */
+function shoptop_smartbill_invoiced_product_ids(PDO $pdo): array
+{
+    if (!shoptop_column_exists_smartbill($pdo, 'orders', 'invoice_series')) {
+        return [];
+    }
+    $stmt = $pdo->query(
+        "SELECT DISTINCT oi.product_id
+         FROM order_items oi
+         INNER JOIN orders o ON o.id = oi.order_id
+         WHERE o.invoice_series IS NOT NULL AND o.invoice_series <> ''"
+    );
+    $out = [];
+    foreach ($stmt === false ? [] : $stmt->fetchAll() as $row) {
+        $out[(string) $row['product_id']] = true;
+    }
     return $out;
 }
 
@@ -449,10 +493,14 @@ function shoptop_smartbill_sync_local_stock(PDO $pdo): array
         'UPDATE products SET stock_qty = :qty WHERE id = :id'
     );
 
+    $invoiced = shoptop_smartbill_invoiced_product_ids($pdo);
+
     $updated = 0;
     $unchanged = 0;
     $missing = 0;
     $skipped = 0;
+    $missingSkus = [];
+    $zeroedSkus = [];
 
     foreach ($stmt->fetchAll() as $row) {
         $id = (string) ($row['id'] ?? '');
@@ -468,9 +516,16 @@ function shoptop_smartbill_sync_local_stock(PDO $pdo): array
 
         // SKU-uri combo (A008X2+A003X2) sau produse doar locale nu există în
         // SmartBill — nu le forțăm stocul la 0, altfel dispar din magazin.
+        // Excepție: un cod deja facturat prin SmartBill există acolo; dacă lipsește
+        // din lista de stocuri, SmartBill are 0 bucăți (lista omite stocurile epuizate).
         if (!array_key_exists($sku, $sbStocks)) {
             $missing++;
-            continue;
+            if (str_contains($sku, '+') || !isset($invoiced[$id])) {
+                $missingSkus[] = $sku;
+                continue;
+            }
+            $zeroedSkus[] = $sku;
+            $sbStocks[$sku] = 0;
         }
 
         $sbQty = (int) $sbStocks[$sku];
@@ -495,6 +550,10 @@ function shoptop_smartbill_sync_local_stock(PDO $pdo): array
         'missing' => $missing,
         'skipped' => $skipped,
         'warehouse' => $settings['warehouse_name'],
+        // Coduri care nu apar în stocul SmartBill: puse pe 0 (cunoscute în SmartBill)
+        // sau lăsate neatinse (combo / produse doar în magazin).
+        'zeroedSkus' => $zeroedSkus,
+        'missingSkus' => $missingSkus,
     ];
 }
 

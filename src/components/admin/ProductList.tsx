@@ -30,6 +30,8 @@ type Props = {
   onOpen: (id: string) => void
   onDuplicate: (product: Product) => void
   onDelete: (product: Product) => void
+  /** Oprește / reia vânzarea (lipsește fără API). */
+  onToggleSales?: (product: Product) => void
 }
 
 const SORT_OPTIONS: Array<{ value: ProductListSort; label: string }> = [
@@ -93,12 +95,14 @@ function RowMenu({
   onDuplicate,
   onDelete,
   onCopied,
+  onToggleSales,
 }: {
   product: Product
   onOpen: () => void
   onDuplicate: () => void
   onDelete: () => void
   onCopied: () => void
+  onToggleSales?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -169,6 +173,19 @@ function RowMenu({
           <button type="button" role="menuitem" className="pl-menu__item" onClick={() => { setOpen(false); onDuplicate() }}>
             Duplică
           </button>
+          {onToggleSales && !isVirtualProduct(product) ? (
+            <>
+              <div className="pl-menu__sep" role="separator" />
+              <button
+                type="button"
+                role="menuitem"
+                className={`pl-menu__item${product.salesDisabled ? '' : ' pl-menu__item--warn'}`}
+                onClick={() => { setOpen(false); onToggleSales() }}
+              >
+                {product.salesDisabled ? 'Reia vânzarea' : 'Oprește vânzarea'}
+              </button>
+            </>
+          ) : null}
           <div className="pl-menu__sep" role="separator" />
           <button
             type="button"
@@ -220,6 +237,7 @@ export function ProductList({
   onOpen,
   onDuplicate,
   onDelete,
+  onToggleSales,
 }: Props) {
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState<ProductListSort>('name')
@@ -258,7 +276,7 @@ export function ProductList({
         t.d90 += s.d90.orders
       }
       if (!isListedInShop(p)) t.hidden++
-      else if ((p.stockQty ?? 0) <= 0) t.outOfStock++
+      else if ((p.stockQty ?? 0) - (p.reservedQty ?? 0) <= 0) t.outOfStock++
     }
     return t
   }, [products, sales])
@@ -369,7 +387,9 @@ export function ProductList({
             const thumb = primaryImageUrl(p)
             const more = extraImageCount(p)
             const stock = p.stockQty ?? 0
-            const tone = stockTone(stock)
+            const reserved = p.reservedQty ?? 0
+            const sellable = p.salesDisabled ? 0 : Math.max(0, stock - reserved)
+            const tone = stockTone(sellable)
             const profit = productProfit(p)
             const markup = markupPercent(p)
             const margin = productMarginPercent(p)
@@ -409,6 +429,8 @@ export function ProductList({
                     {p.category ? <span className="pl-chip">{p.category}</span> : null}
                     {virtual ? (
                       <span className="pl-chip pl-chip--warn">addon checkout</span>
+                    ) : p.salesDisabled ? (
+                      <span className="pl-chip pl-chip--stop">vânzare oprită</span>
                     ) : !listed ? (
                       <span className="pl-chip pl-chip--warn">ascuns (preț 0)</span>
                     ) : null}
@@ -418,10 +440,18 @@ export function ProductList({
 
                 <div className="pl-row__stock">
                   <span className="pl-row__label">Stoc</span>
-                  <span className={`pl-stock pl-stock--${tone}`}>
+                  <span
+                    className={`pl-stock pl-stock--${tone}`}
+                    title={`${stock} pe raft · ${reserved} în comenzi neambalate · ${sellable} de vânzare`}
+                  >
                     {stock}
                     <span className="pl-stock__unit">buc</span>
                   </span>
+                  {reserved > 0 ? (
+                    <span className="pl-stock__sub">
+                      {reserved} rezervate · {sellable} de vânzare
+                    </span>
+                  ) : null}
                 </div>
 
                 <div className="pl-row__price">
@@ -456,6 +486,7 @@ export function ProductList({
                   onDuplicate={() => onDuplicate(p)}
                   onDelete={() => onDelete(p)}
                   onCopied={() => setCopied(true)}
+                  onToggleSales={onToggleSales ? () => onToggleSales(p) : undefined}
                 />
               </li>
             )

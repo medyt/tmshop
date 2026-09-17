@@ -19,11 +19,13 @@ type GestiunePageProps = {
   replaceAll: (products: Product[]) => void
   reloadProducts: () => void
   deleteProduct: (id: string) => Promise<void>
+  setSalesDisabled: (id: string, disabled: boolean) => Promise<Product>
 }
 
 type PendingConfirm =
   | { kind: 'restoreBackup'; products: Product[] }
   | { kind: 'deleteProduct'; product: Product }
+  | { kind: 'toggleSales'; product: Product }
 
 /**
  * Lista de produse. Adăugarea / editarea se fac pe pagină dedicată
@@ -34,10 +36,12 @@ export function GestiunePage({
   replaceAll,
   reloadProducts,
   deleteProduct,
+  setSalesDisabled,
 }: GestiunePageProps) {
   const navigate = useNavigate()
   const [pending, setPending] = useState<PendingConfirm | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [togglingSales, setTogglingSales] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncNote, setSyncNote] = useState<string | null>(null)
   const [sales, setSales] = useState<ProductSalesMap | null>(null)
@@ -81,6 +85,28 @@ export function GestiunePage({
       setDeleting(false)
     }
   }, [deleteProduct, deleting, pending])
+
+  const handleToggleSalesConfirmed = useCallback(async () => {
+    if (pending?.kind !== 'toggleSales' || togglingSales) return
+    const { product } = pending
+    const disable = !product.salesDisabled
+    setTogglingSales(true)
+    try {
+      await setSalesDisabled(product.id, disable)
+      setSyncNote(
+        disable
+          ? `Vânzarea pentru „${product.name}” e oprită: nu mai apare în magazin, iar feed-urile trimit stoc 0.`
+          : `Vânzarea pentru „${product.name}” a fost reluată.`,
+      )
+    } catch (err: unknown) {
+      setSyncNote(
+        err instanceof Error ? err.message : 'Nu am putut schimba starea vânzării.',
+      )
+    } finally {
+      setTogglingSales(false)
+      setPending(null)
+    }
+  }, [pending, setSalesDisabled, togglingSales])
 
   const handleExport = useCallback(async () => {
     let payload = products
@@ -159,12 +185,16 @@ export function GestiunePage({
       const result = await syncSmartbillStock()
       reloadProducts()
       const warehouse = result.warehouse ? ` „${result.warehouse}”` : ''
-      const missing =
-        result.missing > 0
-          ? ` ${result.missing} SKU fără stoc în SmartBill (setate 0).`
+      const zeroed =
+        result.zeroedSkus.length > 0
+          ? ` Epuizate în SmartBill (puse pe 0): ${result.zeroedSkus.join(', ')}.`
+          : ''
+      const untouched =
+        result.missingSkus.length > 0
+          ? ` Negăsite în SmartBill, stoc lăsat neschimbat: ${result.missingSkus.join(', ')}.`
           : ''
       setSyncNote(
-        `Stoc SmartBill${warehouse}: ${result.updated} actualizate, ${result.unchanged} neschimbate.${missing}`,
+        `Stoc SmartBill${warehouse}: ${result.updated} actualizate, ${result.unchanged} neschimbate.${zeroed}${untouched}`,
       )
     } catch (err: unknown) {
       setSyncNote(
@@ -185,7 +215,7 @@ export function GestiunePage({
   return (
     <AdminLayout
       title="Gestiune produse"
-      lead="Stocurile urmează SmartBill: scad la ambalare/expediere (în tranzit) și revin după retur."
+      lead="Stocurile urmează SmartBill: scad la ambalare/expediere și revin când coletul returnat ajunge în depozit. Comenzile încă neambalate rezervă stocul."
       actions={
         <>
           {isProductsApiEnabled() ? (
@@ -274,6 +304,11 @@ export function GestiunePage({
             })
           }}
           onDelete={(product) => setPending({ kind: 'deleteProduct', product })}
+          onToggleSales={
+            isProductsApiEnabled()
+              ? (product) => setPending({ kind: 'toggleSales', product })
+              : undefined
+          }
         />
       </section>
 
@@ -291,6 +326,33 @@ export function GestiunePage({
         onCancel={() => setPending(null)}
         onConfirm={() => {
           void handleDeleteConfirmed()
+        }}
+      />
+
+      <ConfirmModal
+        open={pending?.kind === 'toggleSales'}
+        tone={pending?.kind === 'toggleSales' && !pending.product.salesDisabled ? 'warning' : 'default'}
+        title={
+          pending?.kind === 'toggleSales' && pending.product.salesDisabled
+            ? 'Reiei vânzarea?'
+            : 'Oprești vânzarea?'
+        }
+        description={
+          pending?.kind === 'toggleSales'
+            ? pending.product.salesDisabled
+              ? `„${pending.product.name}” revine în magazin și în feed-uri, cu stocul din gestiune.`
+              : `„${pending.product.name}” dispare din catalog, checkout-ul refuză comenzile noi, iar feed-urile Facebook / Google și BaseLinker primesc stoc 0. Comenzile deja primite rămân neschimbate.`
+            : ''
+        }
+        confirmLabel={
+          pending?.kind === 'toggleSales' && pending.product.salesDisabled
+            ? 'Reia vânzarea'
+            : 'Oprește vânzarea'
+        }
+        busy={togglingSales}
+        onCancel={() => setPending(null)}
+        onConfirm={() => {
+          void handleToggleSalesConfirmed()
         }}
       />
 

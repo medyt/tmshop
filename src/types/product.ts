@@ -38,8 +38,15 @@ export type Product = {
   previousSlugs?: string[]
   /** Categorie pentru filtrare în catalog. */
   category?: string
-  /** Bucăți disponibile în inventarul intern (depozit). */
+  /**
+   * Admin: bucăți pe raft (depozit), încă neambalate.
+   * Magazin: stoc vandabil (raft minus comenzile neambalate; 0 dacă vânzarea e oprită).
+   */
   stockQty?: number
+  /** Doar admin: bucăți promise în comenzi primite, încă neambalate. */
+  reservedQty?: number
+  /** Vânzare oprită manual: ascuns din catalog, refuzat la checkout, stoc 0 în feed-uri. */
+  salesDisabled?: boolean
   /** Galerie: URL-uri https sau data URL după încărcare locală (ex. 5–6 poze). */
   imageUrls: string[]
   /** Text descriptiv pentru catalogul intern (nu e site public). */

@@ -146,8 +146,12 @@ export function buildMetaCatalogCsv(products: Product[]): string {
     const catalogId = clip(product.sku?.trim() ?? '', 100)
     if (!catalogId) continue
 
-    // Stoc intern 0 (combo / gestiune manuală) tot se vinde — feed-ul rămâne „in stock”.
-    const stock = displayStock(product)
+    // Exportul se face din admin (stoc de pe raft): scădem comenzile neambalate,
+    // ca în feed-ul de pe server. Fără stoc vandabil → „out of stock”, cantitate 0.
+    const stock = displayStock({
+      ...product,
+      stockQty: Math.max(0, (product.stockQty ?? 0) - (product.reservedQty ?? 0)),
+    })
     const compareAt = productCompareAtPrice(product)
     const description = clip(
       htmlToPlainText(product.description) || title,
@@ -161,7 +165,7 @@ export function buildMetaCatalogCsv(products: Product[]): string {
       id: catalogId,
       title,
       description,
-      availability: 'in stock',
+      availability: stock > 0 ? 'in stock' : 'out of stock',
       condition: 'new',
       price: formatCatalogPrice(compareAt ?? product.salePrice),
       link: pageUrl(productPagePath(product)),

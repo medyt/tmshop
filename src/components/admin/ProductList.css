@@ -548,3 +548,27 @@
     grid-area: econ;
   }
 }
+
+/* Vânzare oprită manual (produsul nu se mai vinde, feed-urile primesc stoc 0). */
+.pl-chip--stop {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.pl-menu__item--warn {
+  color: #9a3412;
+}
+
+.pl-menu__item--warn:hover {
+  background: #fff7ed;
+}
+
+.pl-stock__sub {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.68rem;
+  color: var(--muted);
+  white-space: nowrap;
+}

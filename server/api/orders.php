@@ -1260,6 +1260,46 @@ function shoptop_order_restore_stock(PDO $pdo, string $orderId): void
     }
 }
 
+/**
+ * Coletul returnat a ajuns înapoi (return_received = 1): stocul revine acum,
+ * dacă nu a revenit deja. Idempotent.
+ */
+function shoptop_order_restock_received_return(PDO $pdo, string $orderId): void
+{
+    if (!shoptop_column_exists($pdo, 'orders', 'return_received')) {
+        return;
+    }
+    $own = !$pdo->inTransaction();
+    if ($own) {
+        $pdo->beginTransaction();
+    }
+    try {
+        $stmt = $pdo->prepare(
+            'SELECT status, stock_applied, return_received FROM orders WHERE id = :id LIMIT 1 FOR UPDATE'
+        );
+        $stmt->execute(['id' => $orderId]);
+        $row = $stmt->fetch();
+        if (
+            $row
+            && (string) $row['status'] === 'returned'
+            && (int) $row['stock_applied'] === 1
+            && (int) $row['return_received'] === 1
+        ) {
+            shoptop_order_restore_stock($pdo, $orderId);
+            $pdo->prepare('UPDATE orders SET stock_applied = 0 WHERE id = :id')
+                ->execute(['id' => $orderId]);
+        }
+        if ($own) {
+            $pdo->commit();
+        }
+    } catch (Throwable $e) {
+        if ($own && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log('Stoc retur receptionat ' . $orderId . ': ' . $e->getMessage());
+    }
+}
+
 function shoptop_update_order_status(PDO $pdo, string $orderId, string $status): array
 {
     $allowed = ['new', 'confirmed', 'processing', 'shipped', 'delivered', 'returned', 'cancelled'];
@@ -1268,11 +1308,12 @@ function shoptop_update_order_status(PDO $pdo, string $orderId, string $status):
     }
 
     $currentStatus = 'new';
+    $hasReturnReceived = shoptop_column_exists($pdo, 'orders', 'return_received');
     $pdo->beginTransaction();
 
     try {
         $stmt = $pdo->prepare(
-            'SELECT id, status, stock_applied
+            'SELECT id, status, stock_applied' . ($hasReturnReceived ? ', return_received' : '') . '
              FROM orders
              WHERE id = :id
              LIMIT 1
@@ -1296,7 +1337,18 @@ function shoptop_update_order_status(PDO $pdo, string $orderId, string $status):
             ) {
                 shoptop_order_apply_stock($pdo, $orderId);
                 $stockApplied = true;
-            } elseif (in_array($status, ['cancelled', 'returned', 'new'], true) && $stockApplied) {
+            } elseif ($status === 'returned' && $stockApplied) {
+                // Refuz / retur pe drum: coletul nu e încă în depozit, deci stocul
+                // revine abia când e marcat reîntors (return_received). Returul după
+                // livrare setat manual e marcat reîntors imediat mai jos.
+                $received = !$hasReturnReceived
+                    || !empty($order['return_received'])
+                    || $currentStatus === 'delivered';
+                if ($received) {
+                    shoptop_order_restore_stock($pdo, $orderId);
+                    $stockApplied = false;
+                }
+            } elseif (in_array($status, ['cancelled', 'new'], true) && $stockApplied) {
                 shoptop_order_restore_stock($pdo, $orderId);
                 $stockApplied = false;
             }
@@ -2025,6 +2077,8 @@ function shoptop_sync_order_from_dpd_track(PDO $pdo, string $orderId, array $tra
         );
         $flag->execute(['id' => $orderId]);
         $returnReceived = true;
+        // Comanda era deja „returnată” cu stocul ținut: coletul a ajuns, stocul revine.
+        shoptop_order_restock_received_return($pdo, $orderId);
     } elseif (
         // Retur în curs (refuz / AWB retur încă pe drum) → ține în Refuzate.
         empty($track['returnedToSender'])
@@ -2156,6 +2210,7 @@ function shoptop_mark_order_return_received(PDO $pdo, string $orderId): array
         $pdo->prepare('UPDATE orders SET return_received = 1 WHERE id = :id')
             ->execute(['id' => $orderId]);
     }
+    shoptop_order_restock_received_return($pdo, $orderId);
     $fresh = shoptop_fetch_order($pdo, $orderId);
     if (!$fresh) {
         throw new RuntimeException('Comanda nu a fost găsită după actualizare.');
@@ -3163,7 +3218,8 @@ if ($method === 'POST') {
         $preparedItems = [];
         $totalAmount = 0.0;
         $hasBundleOffers = shoptop_column_exists($pdo, 'products', 'bundle_offers');
-        $productFields = 'id, name, sku, sale_price, stock_qty' . ($hasBundleOffers ? ', bundle_offers' : '');
+        $productFields = 'id, name, sku, sale_price, stock_qty' . ($hasBundleOffers ? ', bundle_offers' : '')
+            . (shoptop_products_has_sales_disabled($pdo) ? ', sales_disabled' : '');
         $productStmt = $pdo->prepare(
             'SELECT ' . $productFields . '
              FROM products
@@ -3171,6 +3227,7 @@ if ($method === 'POST') {
              FOR UPDATE'
         );
 
+        $reserved = null;
         foreach ($normalizedItems as $item) {
             $productStmt->execute(['id' => $item['product_id']]);
             $product = $productStmt->fetch();
@@ -3179,8 +3236,21 @@ if ($method === 'POST') {
                 shoptop_json_error('Un produs din cos nu mai exista.', 409);
             }
 
+            if (!empty($product['sales_disabled'])) {
+                $pdo->rollBack();
+                shoptop_json_error(
+                    'Produsul ' . (string) $product['name'] . ' nu mai este disponibil momentan.',
+                    409
+                );
+            }
+
+            // Rezervările se citesc după blocarea produsului: o comandă simultană
+            // pe același produs așteaptă și o vede pe cea dinainte.
+            if ($reserved === null) {
+                $reserved = shoptop_reserved_stock_map($pdo);
+            }
             $salePrice = (float) $product['sale_price'];
-            $stockQty = (int) $product['stock_qty'];
+            $stockQty = shoptop_sellable_stock($product, $reserved);
             if ($salePrice <= 0 || $stockQty < $item['quantity']) {
                 $pdo->rollBack();
                 shoptop_json_error(

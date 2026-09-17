@@ -848,7 +848,10 @@ function shoptop_bundle_offers_from_row(array $row): ?array
     return shoptop_normalize_bundle_offers($decoded);
 }
 
-function shoptop_row_to_shop_product(array $row): array
+/**
+ * @param array<string,int>|null $reserved rezervări (shoptop_reserved_stock_map); null = stocul brut
+ */
+function shoptop_row_to_shop_product(array $row, ?array $reserved = null): array
 {
     $imageUrls = json_decode((string) $row['image_urls'], true);
     if (!is_array($imageUrls)) {
@@ -860,12 +863,16 @@ function shoptop_row_to_shop_product(array $row): array
         'name' => (string) $row['name'],
         'salePrice' => (float) $row['sale_price'],
         'discountPercent' => (float) ($row['discount_percent'] ?? 0),
-        'stockQty' => (int) $row['stock_qty'],
+        // Clientul vede stocul vandabil (minus comenzile neambalate), nu stocul de pe raft.
+        'stockQty' => $reserved !== null ? shoptop_sellable_stock($row, $reserved) : (int) $row['stock_qty'],
         'imageUrls' => shoptop_normalize_image_urls(array_values(array_filter(
             $imageUrls,
             static fn ($url): bool => is_string($url) && trim($url) !== ''
         ))),
     ];
+    if (!empty($row['sales_disabled'])) {
+        $product['salesDisabled'] = true;
+    }
 
     if (!empty($row['sku'])) {
         $product['sku'] = (string) $row['sku'];
@@ -909,6 +916,9 @@ function shoptop_row_to_product(array $row): array
             static fn ($url): bool => is_string($url) && trim($url) !== ''
         ))),
     ];
+    if (array_key_exists('sales_disabled', $row)) {
+        $product['salesDisabled'] = !empty($row['sales_disabled']);
+    }
 
     if (!empty($row['sku'])) {
         $product['sku'] = (string) $row['sku'];
@@ -1139,7 +1149,76 @@ function shoptop_normalize_product(mixed $input): array
         'description' => $description,
         'notes' => $notes,
         'bundle_offers' => $bundleOffersJson,
+        // Doar la creare / restaurare backup; la editare se schimbă prin acțiunea dedicată.
+        'sales_disabled' => !empty($input['salesDisabled']) ? 1 : 0,
     ];
+}
+
+/** Coloana `products.sales_disabled` (migrarea 19: vânzare oprită manual). */
+function shoptop_products_has_sales_disabled(PDO $pdo): bool
+{
+    static $cached = null;
+    if ($cached !== null) {
+        return $cached;
+    }
+    $stmt = $pdo->prepare(
+        'SELECT 1
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = \'products\'
+           AND COLUMN_NAME = \'sales_disabled\'
+         LIMIT 1'
+    );
+    $stmt->execute();
+    $cached = (bool) $stmt->fetchColumn();
+    return $cached;
+}
+
+/**
+ * Bucăți rezervate de comenzile primite dar încă neambalate (stocul se scade
+ * abia la ambalare / AWB). Fără rezervare, magazinul vinde aceeași bucată de
+ * mai multe ori. Draft-urile card neplătite nu rezervă.
+ *
+ * @return array<string,int> product_id => bucăți
+ */
+function shoptop_reserved_stock_map(PDO $pdo): array
+{
+    static $cache = null;
+    if ($cache !== null) {
+        return $cache;
+    }
+    $cache = [];
+    try {
+        $sql = "SELECT oi.product_id, SUM(oi.quantity) AS qty
+                FROM order_items oi
+                INNER JOIN orders o ON o.id = oi.order_id
+                WHERE o.status IN ('new', 'confirmed')
+                  AND o.stock_applied = 0
+                  AND (o.payment_method <> 'card'
+                       OR o.payment_status = 'paid'
+                       OR (o.awb_number IS NOT NULL AND o.awb_number <> ''))
+                GROUP BY oi.product_id";
+        $stmt = $pdo->query($sql);
+        foreach ($stmt === false ? [] : $stmt->fetchAll() as $row) {
+            $cache[(string) $row['product_id']] = (int) $row['qty'];
+        }
+    } catch (Throwable $e) {
+        // Schemă veche (fără payment_method etc.): fără rezervare, ca înainte.
+        error_log('Rezervare stoc: ' . $e->getMessage());
+        $cache = [];
+    }
+    return $cache;
+}
+
+/** Stoc vandabil: stocul de pe raft minus comenzile neambalate; 0 dacă vânzarea e oprită. */
+function shoptop_sellable_stock(array $row, array $reserved): int
+{
+    if (!empty($row['sales_disabled'])) {
+        return 0;
+    }
+    $stock = (int) ($row['stock_qty'] ?? 0);
+    $held = (int) ($reserved[(string) ($row['id'] ?? '')] ?? 0);
+    return max(0, $stock - $held);
 }
 
 function shoptop_products_has_bundle_offers(PDO $pdo): bool
@@ -1278,6 +1357,12 @@ function shoptop_insert_product(PDO $pdo, array $product): void
     }
     $bundleCol = $hasBundle ? ', bundle_offers' : '';
     $bundleVal = $hasBundle ? ', :bundle_offers' : '';
+    if (shoptop_products_has_sales_disabled($pdo)) {
+        $bundleCol .= ', sales_disabled';
+        $bundleVal .= ', :sales_disabled';
+    } else {
+        unset($product['sales_disabled']);
+    }
     $stmt = $pdo->prepare(
         'INSERT INTO products (
             id, name, slug, category, sku, ean, brand, google_category, mpn,
@@ -1322,6 +1407,8 @@ function shoptop_update_product(PDO $pdo, array $product): int
     if (!$hasBundle) {
         unset($product['bundle_offers']);
     }
+    // „Vânzare oprită” nu se atinge la salvarea din editor (are buton dedicat).
+    unset($product['sales_disabled']);
     $bundleSet = $hasBundle ? ",\n            bundle_offers = :bundle_offers" : '';
     $stmt = $pdo->prepare(
         'UPDATE products SET

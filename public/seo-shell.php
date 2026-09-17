@@ -78,6 +78,16 @@ if (preg_match('#^/produs/([^/]+)/?$#u', $path, $m) === 1) {
 
     $name = trim((string) ($row['name'] ?? 'Produs'));
     $price = (float) ($row['sale_price'] ?? 0);
+    // Disponibilitate pentru Google: vânzare oprită sau fără stoc vandabil → OutOfStock.
+    $sellable = (int) ($row['stock_qty'] ?? 0);
+    if ($pdo instanceof PDO && function_exists('shoptop_sellable_stock') && function_exists('shoptop_reserved_stock_map')) {
+        try {
+            $sellable = shoptop_sellable_stock($row, shoptop_reserved_stock_map($pdo));
+        } catch (Throwable $e) {
+            $sellable = (int) ($row['stock_qty'] ?? 0);
+        }
+    }
+    $inStock = empty($row['sales_disabled']) && $sellable > 0;
     $descHtml = (string) ($row['description'] ?? '');
     $plain = shoptop_seo_plain_text($descHtml, 160);
     if ($plain === '') {
@@ -133,7 +143,7 @@ if (preg_match('#^/produs/([^/]+)/?$#u', $path, $m) === 1) {
                     'url' => $canonical,
                     'priceCurrency' => 'RON',
                     'price' => number_format($price, 2, '.', ''),
-                    'availability' => 'https://schema.org/InStock',
+                    'availability' => $inStock ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
                     'itemCondition' => 'https://schema.org/NewCondition',
                 ],
             ],

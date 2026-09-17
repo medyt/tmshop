@@ -134,12 +134,39 @@ export async function replaceAllProductsRemote(
   }
 }
 
+/**
+ * Oprește / pornește vânzarea unui produs (se aplică imediat, fără salvarea editorului):
+ * ascuns din catalog, refuzat la checkout, stoc 0 în feed-uri și BaseLinker.
+ */
+export async function setProductSalesDisabled(id: string, disabled: boolean): Promise<Product> {
+  const res = await apiFetch(
+    '/products.php',
+    {
+      method: 'POST',
+      body: JSON.stringify({ action: 'setSalesDisabled', id, disabled }),
+    },
+    { credentials: 'include' },
+  )
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res))
+  }
+  const parsed = parseProductRecord((await res.json()) as Record<string, unknown>)
+  if (!parsed) {
+    throw new Error('Raspuns invalid de la server.')
+  }
+  return parsed
+}
+
 export type SmartbillStockSyncResult = {
   updated: number
   unchanged: number
   missing: number
   skipped: number
   warehouse: string
+  /** Coduri lipsă din stocul SmartBill, cunoscute acolo → puse pe 0. */
+  zeroedSkus: string[]
+  /** Coduri lipsă din SmartBill (combo / doar în magazin) → lăsate neatinse. */
+  missingSkus: string[]
 }
 
 /** Copiază stocul din gestiunea SmartBill (minus coletele încă nefacturate). */
@@ -162,6 +189,8 @@ export async function syncSmartbillStock(): Promise<SmartbillStockSyncResult> {
     missing: Number(data.missing) || 0,
     skipped: Number(data.skipped) || 0,
     warehouse: typeof data.warehouse === 'string' ? data.warehouse : '',
+    zeroedSkus: Array.isArray(data.zeroedSkus) ? data.zeroedSkus.map(String) : [],
+    missingSkus: Array.isArray(data.missingSkus) ? data.missingSkus.map(String) : [],
   }
 }
 
