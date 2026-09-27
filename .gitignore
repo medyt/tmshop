@@ -27,3 +27,9 @@ server/api/config.php
 
 # Config local Claude Code (launch.json)
 .claude/
+
+# Backup local al descrierilor originale (mare, contine poze base64)
+scripts/landing/descriptions-backup.json
+
+# Datele contului FTP pentru scripts/deploy.ps1 (raman doar local)
+deploy.local.json

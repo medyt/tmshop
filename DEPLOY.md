@@ -113,6 +113,42 @@ Catalogul afișează doar produsele cu **preț de vânzare > 0** și **stoc > 0*
 
 ## 5. Build frontend și upload
 
+### 5.a. Deployment automat: `npm run deploy` (recomandat)
+
+Un singur script face build-ul și urcă prin FTPS doar fișierele schimbate, fără FileZilla.
+
+**O singură dată, la configurare:**
+1. Copiază `deploy.local.example.json` în `deploy.local.json` (rămâne doar pe calculatorul tău, e în `.gitignore`).
+2. Completează datele contului FTP din cPanel: `host`, `user`, `password`. Verifică în FileZilla ce dosar se deschide la conectare și pune în `siteDir` calea către rădăcina site-ului (de obicei `/public_html`), iar în `apiDir` calea către API (`/public_html/shoptop-api`). Dacă în FileZilla ajungi direct în rădăcina site-ului, folosește `/` și `/shoptop-api`.
+
+**La fiecare lansare:**
+```
+npm run deploy:check   # arată ce s-ar urca, fără să urce nimic
+npm run deploy         # build + upload site + API
+npm run deploy:api     # doar fișierele PHP din shoptop-api (fără build)
+```
+
+Ce face și ce nu face scriptul:
+- Urcă `dist/` în rădăcina site-ului și fișierele `.php` din `server/api/` în `shoptop-api/`.
+- Compară amprenta fiecărui fișier cu `.deploy-manifest.json` de pe server și urcă doar ce s-a schimbat. Prima rulare urcă tot.
+- `index.html` se urcă ultimul, după `assets/`, ca site-ul să nu ceară fișiere care încă nu au ajuns.
+- **Nu atinge niciodată** `config.php`, `uploads/`, `sessions/`, `cache/`, `keys/` de pe server.
+- **Nu șterge nimic** de pe server. Fișierele vechi din `assets/` rămân, dar nu sunt folosite.
+- **Nu rulează migrări SQL.** Dacă versiunea cere o migrare (vezi lista de la capitolul 2), rulează întâi SQL-ul în phpMyAdmin, apoi `npm run deploy`.
+- Dacă un fișier nu urcă, manifestul nu se actualizează: rulezi din nou și reîncearcă doar ce lipsește.
+
+Eroare de certificat la conectare? Pune `"allowInvalidCert": true` în `deploy.local.json` (traficul rămâne criptat, doar nu se verifică certificatul).
+
+### 5.b. Deployment automat din GitHub (opțional)
+
+`.github/workflows/deploy.yml` poate urca automat la fiecare push pe `main`. Se activează doar când proprietarul repo-ului (`medyt`) adaugă în **Settings → Secrets and variables → Actions**:
+- secretele `FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD`;
+- variabilele `DEPLOY_ENABLED` = `true`, `FTP_SITE_DIR`, `FTP_API_DIR`.
+
+Fără ele, workflow-ul nu face nimic. Atenție: cu deployment automat, codul ajunge pe server înaintea migrărilor SQL, deci pentru versiunile cu SQL rulează întâi migrarea.
+
+### 5.c. Upload manual (varianta veche, cu FileZilla)
+
 1. Asigură-te că `.env.production` conține:
    ```
    VITE_API_URL=/shoptop-api

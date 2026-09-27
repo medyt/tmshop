@@ -26,3 +26,8 @@
   RewriteCond %{REQUEST_FILENAME} !-d
   RewriteRule . /index.html [L]
 </IfModule>
+
+# Evidenta fisierelor urcate de scripts/deploy.ps1 — nu e pentru vizitatori.
+<Files ".deploy-manifest.json">
+  Require all denied
+</Files>

@@ -1,0 +1,70 @@
+name: Deploy shop-top.ro
+
+# Rulează doar când proprietarul repo-ului a configurat secretele FTP și a pus
+# variabila DEPLOY_ENABLED = true (Settings -> Secrets and variables -> Actions).
+# Fără ele, workflow-ul se oprește imediat și nu atinge serverul.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Instalează dependențele
+        run: npm ci
+
+      - name: Verifică tipurile și build
+        run: npm run build
+
+      # API-ul întâi: fișierele PHP noi funcționează și cu frontend-ul vechi.
+      # config.php, uploads/, sessions/, cache/ și keys/ rămân neatinse pe server.
+      - name: Urcă API-ul (shoptop-api)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          local-dir: ./server/api/
+          server-dir: ${{ vars.FTP_API_DIR }}
+          state-name: .ftp-deploy-api.json
+          dangerous-clean-slate: false
+          exclude: |
+            **/config.php
+            **/uploads/**
+            **/sessions/**
+            **/cache/**
+            **/keys/**
+            **/.git*
+
+      - name: Urcă site-ul (dist)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          local-dir: ./dist/
+          server-dir: ${{ vars.FTP_SITE_DIR }}
+          state-name: .ftp-deploy-site.json
+          dangerous-clean-slate: false
+          exclude: |
+            **/shoptop-api/**
+            **/.git*
+
+      - name: Reminder migrări SQL
+        run: echo "Daca versiunea cere o migrare SQL (DEPLOY.md, capitolul 2), ruleaz-o in phpMyAdmin."
