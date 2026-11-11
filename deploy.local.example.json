@@ -1,11 +1,9 @@
 {
-  "_comentariu": "Copiaza fisierul ca deploy.local.json (ramane doar pe calculatorul tau, e in .gitignore) si completeaza datele contului FTP din cPanel.",
-  "host": "ftp.shop-top.ro",
-  "user": "utilizator_ftp@shop-top.ro",
-  "password": "parola_contului_ftp",
-  "protocol": "ftps",
-  "siteDir": "/public_html",
-  "apiDir": "/public_html/shoptop-api",
-  "siteUrl": "https://shop-top.ro",
-  "allowInvalidCert": false
+  "_comentariu": "Copiaza ca deploy.local.json (ramane doar pe calculatorul tau). Serverul DigitalOcean foloseste SSH cu cheia SSH de pe calculatorul tau, deci nu e nevoie de parola aici.",
+  "mode": "ssh",
+  "host": "164.92.200.248",
+  "user": "root",
+  "siteDir": "/var/www/shop-top",
+  "apiDir": "/var/www/shop-top/shoptop-api",
+  "siteUrl": "https://shop-top.ro"
 }

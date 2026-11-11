@@ -6,6 +6,29 @@ Magazinul are un frontend React (Vite) și un API PHP + MySQL. Acest ghid acoper
 
 ---
 
+## Serverul actual: DigitalOcean (din 11 noiembrie 2026)
+
+Hostingul cPanel vechi a fost oprit. Magazinul rulează acum pe un droplet DigitalOcean (Frankfurt, Ubuntu 24.04), IP `164.92.200.248`. Capitolele de mai jos despre cPanel / FileZilla / phpMyAdmin rămân doar ca istoric.
+
+| Ce | Unde |
+|---|---|
+| Site (conținutul din `dist/`) | `/var/www/shop-top` |
+| API (`server/api/`) | `/var/www/shop-top/shoptop-api` |
+| Setări și parole (`config.php`) | `/var/www/shop-top/shoptop-api/config.php` (doar pe server) |
+| Baza de date | MySQL 8.0, baza `vbpnetmf_shoptop`, utilizator `shoptop` (parola în `/root/.shoptop-db` și în `config.php`) |
+| Backup bază | zilnic la 03:30 în `/root/backups`, păstrat 14 zile |
+| Backup cod | la fiecare deploy în `/root/deploy-backups` (ultimele 10) |
+| HTTPS | Let's Encrypt, reînnoire automată (`certbot.timer`) |
+| DNS | zona `shop-top.ro` în DigitalOcean → Networking → Domains (nameserverele la ROTLD: ns1–ns3.digitalocean.com) |
+
+**Lansare cod nou:** `npm run deploy` (build + urcare prin SSH cu cheia de pe calculator; setări în `deploy.local.json`, model în `deploy.local.example.json`). `npm run deploy:check` verifică conexiunea fără să urce nimic, `npm run deploy:api` urcă doar PHP-ul. Scriptul verifică sintaxa PHP pe server înainte să înlocuiască fișierele și nu atinge `config.php`, `uploads/`, `sessions/`, `cache/`, `keys/`.
+
+**Migrare SQL:** `scp sql/<fisier>-server.sql root@164.92.200.248:/root/` apoi `ssh root@164.92.200.248 "mysql vbpnetmf_shoptop < /root/<fisier>-server.sql"`.
+
+**Restaurare din 11.11.2026:** baza a fost refăcută din dump-ul live din 15.09.2026 (21:58) + migrările 18, 19 și descrierile landing. Comenzile de după 15.09 lipsesc. Pozele urcate din admin s-au pierdut; 92 de poze au fost recuperate din descrierile originale (`server/api/uploads/products/<id>-gN.*`), iar ordinea veche a galeriilor e în tabela `products_images_backup_20261111`. Parolele integrărilor (DPD, Fan, SmartBill, Netopia + chei, SMTP, Meta CAPI, BaseLinker) trebuie completate din nou în `config.php`; până atunci plata cu cardul e oprită.
+
+---
+
 ## 0. Cerințe
 
 - Node.js 20+ și npm (pentru build local)
