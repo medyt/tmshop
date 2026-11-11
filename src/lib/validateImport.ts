@@ -1,9 +1,10 @@
 import { clampImageUrls, normalizeImageUrl } from './productImages'
-import type {
-  BundleOffer,
-  BundleOfferBadge,
-  BundleOfferMode,
-  Product,
+import {
+  isBundleQty,
+  type BundleOffer,
+  type BundleOfferBadge,
+  type BundleOfferMode,
+  type Product,
 } from '../types/product'
 
 function toNumberOrUndefined(x: unknown): number | undefined {
@@ -67,7 +68,7 @@ function parseBundleOffers(o: Record<string, unknown>): BundleOffer[] | undefine
     const r = item as Record<string, unknown>
     const qtyRaw = r.qty
     const qty = typeof qtyRaw === 'number' ? qtyRaw : Number(qtyRaw)
-    if (qty !== 2 && qty !== 3) continue
+    if (!isBundleQty(qty)) continue
 
     if (!isBundleOfferMode(r.mode)) continue
     const valueRaw = r.value

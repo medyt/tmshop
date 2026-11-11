@@ -1,4 +1,4 @@
-import type { Product } from '../types/product'
+import { isBundleQty, type BundleQty, type Product } from '../types/product'
 
 type BundleOffer = NonNullable<Product['bundleOffers']>[number]
 
@@ -131,13 +131,13 @@ export function bundleOfferForQty(
 ): BundleOffer | null {
   const offers = product.bundleOffers ?? []
   const q = Math.floor(quantity)
-  if (q !== 2 && q !== 3) return null
+  if (!isBundleQty(q)) return null
   const offer = offers.find((o) => o.enabled && o.qty === q)
   return offer ?? null
 }
 
 /** Implicit un singur pachet / bucată la deschiderea produsului. */
-export function defaultBundleQty(_product: Product): 1 | 2 | 3 {
+export function defaultBundleQty(_product: Product): 1 | BundleQty {
   return 1
 }
 

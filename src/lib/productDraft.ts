@@ -2,6 +2,7 @@ import { clampImageUrls } from './productImages'
 import { sanitizeHtml } from './richText'
 import {
   createEmptyProduct,
+  isBundleQty,
   type BundleOffer,
   type Product,
 } from '../types/product'
@@ -69,7 +70,7 @@ function normalizeBundleOffers(
       title: typeof o.title === 'string' ? o.title.trim() : undefined,
       badge: o.badge,
     }))
-    .filter((o) => o.qty === 2 || o.qty === 3)
+    .filter((o) => isBundleQty(o.qty))
     .filter((o) => o.mode === 'fixed_total' || o.mode === 'percent_off')
     .filter((o) => Number.isFinite(o.value) && o.value > 0)
     .map((o) => ({

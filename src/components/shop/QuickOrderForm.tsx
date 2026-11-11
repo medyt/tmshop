@@ -82,7 +82,6 @@ const emptyFields: QuickOrderFields = {
 
 function validateQuickOrder(
   fields: QuickOrderFields,
-  acceptedTerms: boolean,
   paymentMethod: PaymentMethod,
 ): string | null {
   if (!isDpdNomenclatureReady()) {
@@ -106,7 +105,6 @@ function validateQuickOrder(
   if (!fields.city.trim()) missing.push('localitatea')
   if (fields.street.trim().length < 2) missing.push('strada')
   if (!fields.streetNumber.trim()) missing.push('numărul')
-  if (!acceptedTerms) missing.push('acceptarea termenilor și condițiilor')
 
   if (missing.length === 0) return null
   if (missing.length === 1) {
@@ -139,7 +137,7 @@ export function QuickOrderForm({
   const [addonCatalog, setAddonCatalog] = useState<CheckoutAddonDef[]>(() =>
     getCheckoutAddons(),
   )
-  const [acceptedTerms, setAcceptedTerms] = useState(false)
+  const [showEmail, setShowEmail] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [nomenReady, setNomenReady] = useState(false)
@@ -284,7 +282,7 @@ export function QuickOrderForm({
     event.preventDefault()
     if (submitting || submitLockRef.current) return
 
-    const validationMessage = validateQuickOrder(fields, acceptedTerms, paymentMethod)
+    const validationMessage = validateQuickOrder(fields, paymentMethod)
     if (validationMessage) {
       setError(validationMessage)
       notify(validationMessage, 'Date incomplete')
@@ -379,10 +377,10 @@ export function QuickOrderForm({
   return (
     <form className="shop-quick-order" onSubmit={handleSubmit}>
       <div className="shop-quick-order__head">
-        <h2 className="shop-quick-order__title">Comandă rapidă</h2>
+        <h2 className="shop-quick-order__title">Unde îți trimitem coletul?</h2>
         <p className="shop-quick-order__lead">
-          Completează datele de livrare și alege metoda de plată. Confirmarea
-          ajunge pe SMS. Poți plăti ramburs la curier sau online cu cardul.
+          Plătești la curier, când primești coletul, sau online cu cardul. Nu
+          ai nevoie de cont.
         </p>
       </div>
 
@@ -410,32 +408,7 @@ export function QuickOrderForm({
       </div>
 
       <div className="shop-quick-order__grid">
-        <fieldset className="shop-payment shop-field--wide shop-quick-order__billing-type">
-          <legend>Facturare</legend>
-          <label className="shop-payment__option">
-            <input
-              type="radio"
-              name="quickBillingType"
-              checked={fields.billingType === 'person'}
-              onChange={() => update('billingType', 'person')}
-            />
-            <span>
-              <strong>Persoană fizică</strong>
-            </span>
-          </label>
-          <label className="shop-payment__option">
-            <input
-              type="radio"
-              name="quickBillingType"
-              checked={fields.billingType === 'company'}
-              onChange={() => update('billingType', 'company')}
-            />
-            <span>
-              <strong>Firmă</strong>
-            </span>
-          </label>
-        </fieldset>
-        <label className="shop-field shop-field--wide">
+        <label className="shop-field shop-field--wide shop-field--ico shop-field--ico-user">
           <span>Nume și prenume</span>
           <input
             value={fields.fullName}
@@ -445,39 +418,8 @@ export function QuickOrderForm({
             placeholder="ex: Ion Popescu"
           />
         </label>
-        {fields.billingType === 'company' ? (
-          <>
-            <label className="shop-field shop-field--wide">
-              <span>Denumire firmă</span>
-              <input
-                value={fields.companyName}
-                onChange={(event) => update('companyName', event.target.value)}
-                required
-                autoComplete="organization"
-              />
-            </label>
-            <label className="shop-field">
-              <span>CUI</span>
-              <input
-                value={fields.companyCui}
-                onChange={(event) => update('companyCui', event.target.value)}
-                required
-                placeholder="ex. 54732560"
-                autoComplete="off"
-              />
-            </label>
-            <label className="shop-field">
-              <span>Reg. Com. (opțional)</span>
-              <input
-                value={fields.companyRegCom}
-                onChange={(event) => update('companyRegCom', event.target.value)}
-                autoComplete="off"
-              />
-            </label>
-          </>
-        ) : null}
-        <label className="shop-field shop-field--wide">
-          <span>Telefon *</span>
+        <label className="shop-field shop-field--wide shop-field--ico shop-field--ico-phone">
+          <span>Telefon</span>
           <input
             value={fields.phone}
             onChange={(event) => update('phone', sanitizeRoPhoneInput(event.target.value))}
@@ -492,21 +434,8 @@ export function QuickOrderForm({
             placeholder="07xxxxxxxx"
           />
           <span className="shop-field__hint muted">
-            Primești confirmarea comenzii pe SMS.
+            Te anunțăm prin SMS când pleacă coletul.
           </span>
-        </label>
-        <label className="shop-field shop-field--wide">
-          <span>
-            Email{paymentMethod === 'card' ? ' *' : ' (opțional, în plus față de SMS)'}
-          </span>
-          <input
-            type="email"
-            value={fields.email}
-            onChange={(event) => update('email', event.target.value)}
-            autoComplete="email"
-            required={paymentMethod === 'card'}
-            placeholder="ex: ion@email.ro"
-          />
         </label>
         {nomenError ? (
           <div className="shop-field shop-field--wide" role="alert">
@@ -527,7 +456,7 @@ export function QuickOrderForm({
             Se încarcă județele și localitățile din nomenclatorul DPD…
           </p>
         ) : null}
-        <label className="shop-field">
+        <label className="shop-field shop-field--ico shop-field--ico-pin">
           <span>Județ</span>
           <select
             value={fields.county}
@@ -554,7 +483,7 @@ export function QuickOrderForm({
             ))}
           </select>
         </label>
-        <label className="shop-field">
+        <label className="shop-field shop-field--ico shop-field--ico-pin">
           <span>Localitate</span>
           <select
             value={fields.city}
@@ -616,7 +545,7 @@ export function QuickOrderForm({
             ))}
           </select>
         </label>
-        <label className="shop-field shop-field--street">
+        <label className="shop-field shop-field--street shop-field--ico shop-field--ico-home">
           <span>Stradă</span>
           <input
             value={fields.street}
@@ -643,10 +572,76 @@ export function QuickOrderForm({
             autoComplete="address-line3"
           />
         </label>
+        {/* Emailul e obligatoriu doar la plata cu cardul; la ramburs apare la cerere. */}
+        {paymentMethod === 'card' || showEmail || fields.email ? (
+          <label className="shop-field shop-field--wide">
+            <span>Email{paymentMethod === 'card' ? '' : ' (opțional)'}</span>
+            <input
+              type="email"
+              value={fields.email}
+              onChange={(event) => update('email', event.target.value)}
+              autoComplete="email"
+              required={paymentMethod === 'card'}
+              placeholder="ex: ion@email.ro"
+            />
+          </label>
+        ) : null}
+        <div className="shop-field--wide shop-quick-order__extras">
+          {paymentMethod !== 'card' && !showEmail && !fields.email ? (
+            <button
+              type="button"
+              className="shop-link-btn"
+              onClick={() => setShowEmail(true)}
+            >
+              + Adaugă email
+            </button>
+          ) : null}
+          <label className="shop-quick-order__company-toggle">
+            <input
+              type="checkbox"
+              checked={fields.billingType === 'company'}
+              onChange={(event) =>
+                update('billingType', event.target.checked ? 'company' : 'person')
+              }
+            />
+            <span>Vreau factură pe firmă</span>
+          </label>
+        </div>
+        {fields.billingType === 'company' ? (
+          <>
+            <label className="shop-field shop-field--wide">
+              <span>Denumire firmă</span>
+              <input
+                value={fields.companyName}
+                onChange={(event) => update('companyName', event.target.value)}
+                required
+                autoComplete="organization"
+              />
+            </label>
+            <label className="shop-field">
+              <span>CUI</span>
+              <input
+                value={fields.companyCui}
+                onChange={(event) => update('companyCui', event.target.value)}
+                required
+                placeholder="ex. 54732560"
+                autoComplete="off"
+              />
+            </label>
+            <label className="shop-field">
+              <span>Reg. Com. (opțional)</span>
+              <input
+                value={fields.companyRegCom}
+                onChange={(event) => update('companyRegCom', event.target.value)}
+                autoComplete="off"
+              />
+            </label>
+          </>
+        ) : null}
       </div>
 
       <div className="shop-checkout__bumps shop-quick-order__bumps" aria-label="Opțiuni suplimentare">
-        <p className="shop-checkout__bumps-title">Completează comanda</p>
+        <p className="shop-checkout__bumps-title">Opțional, dacă dorești</p>
         {addonCatalog.map((addon) => {
           const active = checkoutAddons[addon.id] === true
           return (
@@ -692,8 +687,8 @@ export function QuickOrderForm({
             onChange={() => setPaymentMethod('cod')}
           />
           <span>
-            <strong>Plată la livrare (ramburs)</strong>
-            <span className="muted"> — plătești curierului la primire.</span>
+            <strong>Plătesc la curier, la primire</strong>
+            <span className="muted"> (ramburs)</span>
           </span>
         </label>
         <label
@@ -709,7 +704,7 @@ export function QuickOrderForm({
             onChange={() => setPaymentMethod('card')}
           />
           <span>
-            <strong>Card online (Netopia)</strong>
+            <strong>Plătesc online cu cardul</strong>
             <img
               className="shop-netopia-badge shop-netopia-badge--light"
               src="/badges/netopia.svg"
@@ -724,10 +719,6 @@ export function QuickOrderForm({
               width="122"
               height="22"
             />
-            <span className="muted">
-              {' '}
-              — ești redirecționat securizat pentru plata cu cardul.
-            </span>
           </span>
         </label>
       </fieldset>
@@ -758,20 +749,6 @@ export function QuickOrderForm({
         </div>
       </div>
 
-      <label className="shop-field shop-field--wide shop-field--checkbox shop-quick-order__terms">
-        <input
-          type="checkbox"
-          checked={acceptedTerms}
-          onChange={(event) => setAcceptedTerms(event.target.checked)}
-          required
-        />
-        <span>
-          Sunt de acord cu{' '}
-          <Link to={SHOP_INFO_ROUTES.terms}>termenii și condițiile</Link> și{' '}
-          <Link to={SHOP_INFO_ROUTES.privacy}>politica de confidențialitate</Link>.
-        </span>
-      </label>
-
       {error ? (
         <p className="shop-form__error" role="alert">
           {error}
@@ -789,12 +766,20 @@ export function QuickOrderForm({
             : 'Se trimite comanda…'
           : paymentMethod === 'card'
             ? `Continuă spre plată · ${formatRon(total)}`
-            : `Comandă acum · ${formatRon(total)}`}
+            : `Trimite formularul de comandă`}
+        {!submitting && paymentMethod !== 'card' ? (
+          <span className="shop-quick-order__submit-sub">
+            Plătești {formatRon(total)} la curier, la primire
+          </span>
+        ) : null}
       </button>
+      {/* Acordul se dă prin trimiterea comenzii (fără bifă): textul trebuie să rămână
+          lângă buton, cu linkuri către documente, iar butonul să arate suma de plată. */}
       <p className="shop-quick-order__note muted">
-        {paymentMethod === 'card'
-          ? 'Comandă în siguranță · fără cont · plată online prin Netopia.'
-          : 'Comandă în siguranță · fără cont · plătești ramburs la primire.'}
+        Prin trimiterea comenzii ești de acord cu{' '}
+        <Link to={SHOP_INFO_ROUTES.terms}>termenii și condițiile</Link> și ai luat
+        la cunoștință{' '}
+        <Link to={SHOP_INFO_ROUTES.privacy}>politica de confidențialitate</Link>.
       </p>
     </form>
   )

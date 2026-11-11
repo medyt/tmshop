@@ -35,6 +35,8 @@ const ALLOWED_TAGS = [
   'source',
   'figure',
   'figcaption',
+  'details',
+  'summary',
 ]
 
 const ALLOWED_ATTR = [
@@ -134,6 +136,12 @@ export function buildVideoEmbed(rawUrl: string): string {
   }
 
   return ''
+}
+
+/** True dacă descrierea folosește formatul „landing” (.lpd) — vezi scripts/landing/FORMAT.md. */
+export function isLandingDescription(value: string | undefined | null): boolean {
+  if (!value) return false
+  return /^\s*<div class="lpd"[\s>]/i.test(value)
 }
 
 /** True dacă textul conține markup HTML (folosit pentru fallback la afișare). */

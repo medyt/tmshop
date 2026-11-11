@@ -292,12 +292,12 @@ function shoptop_backfill_courier_costs(PDO $pdo, int $limit = 50): array
 }
 
 /**
- * Calculeaza pretul pentru bundle (2/3 buc) daca exista oferta activa.
+ * Calculeaza pretul pentru bundle (2/3/4 buc) daca exista oferta activa.
  * Intoarce [unitPrice, lineTotal] sau null daca nu se aplica.
  */
 function shoptop_bundle_pricing(array $productRow, int $quantity, float $salePrice): ?array
 {
-    if ($quantity !== 2 && $quantity !== 3) {
+    if (!in_array($quantity, [2, 3, 4], true)) {
         return null;
     }
 

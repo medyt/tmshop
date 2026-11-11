@@ -1107,6 +1107,15 @@ button.shop-btn {
   background: var(--shop-surface);
 }
 
+/* Miniatură fără poză: substituentul rămâne în căsuța lui (altfel `inset: 0`
+   îl întinde peste toată galeria și acoperă celelalte miniaturi). */
+.shop-product__thumb.shop-product__placeholder {
+  position: static;
+  font-size: 0.6rem;
+  text-align: center;
+  overflow: hidden;
+}
+
 .shop-product__thumb-btn {
   display: block;
   width: 100%;

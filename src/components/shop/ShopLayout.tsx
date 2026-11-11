@@ -3,6 +3,8 @@ import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { trackPageView } from '../../lib/analytics'
 import '../../pages/ShopHome.css'
+import '../../pages/ShopLight.css'
+import '../../pages/ShopLanding.css'
 import { CookieConsent } from './CookieConsent'
 import { ShopFooter } from './ShopFooter'
 import { ShopHeader } from './ShopHeader'
@@ -21,7 +23,7 @@ export function ShopLayout({ children }: ShopLayoutProps) {
 
   return (
     <div
-      className={`shop shop--dark${productLanding ? ' shop--product-lp' : ''}`}
+      className={`shop shop--light${productLanding ? ' shop--product-lp' : ''}`}
     >
       <ShopHeader />
       <main className="shop-main">{children}</main>

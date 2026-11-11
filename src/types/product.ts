@@ -1,13 +1,21 @@
 export type BundleOfferMode = 'fixed_total' | 'percent_off'
 export type BundleOfferBadge = 'popular' | 'best'
 
+/** Pragurile de cantitate pentru care se poate defini o ofertă de pachet. */
+export const BUNDLE_QTYS = [2, 3, 4] as const
+export type BundleQty = (typeof BUNDLE_QTYS)[number]
+
+export function isBundleQty(value: unknown): value is BundleQty {
+  return value === 2 || value === 3 || value === 4
+}
+
 /**
- * Oferte bundle (ex. 2/3 buc) configurabile din admin.
+ * Oferte bundle (ex. 2/3/4 buc) configurabile din admin.
  * - fixed_total: `value` este prețul TOTAL pentru `qty` bucăți.
  * - percent_off: `value` este % discount aplicat la `salePrice * qty`.
  */
 export type BundleOffer = {
-  qty: 2 | 3
+  qty: BundleQty
   enabled: boolean
   mode: BundleOfferMode
   value: number

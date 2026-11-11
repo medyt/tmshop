@@ -19,7 +19,13 @@ import { usePageMeta } from '../../hooks/usePageMeta'
 import { trackAddToCart, trackViewContent } from '../../lib/analytics'
 import { metaCatalogId } from '../../lib/metaCatalogCsv'
 import { primaryImageUrl, normalizeImageUrl } from '../../lib/productImages'
-import { sanitizeHtml, looksLikeHtml, htmlToBlocks, htmlToPlainText } from '../../lib/richText'
+import {
+  sanitizeHtml,
+  looksLikeHtml,
+  htmlToBlocks,
+  htmlToPlainText,
+  isLandingDescription,
+} from '../../lib/richText'
 import {
   findListedProduct,
   productPagePath,
@@ -59,7 +65,7 @@ import {
   buildProductJsonLd,
   productMetaDescription,
 } from '../../lib/seo'
-import type { Product } from '../../types/product'
+import { BUNDLE_QTYS, type BundleQty, type Product } from '../../types/product'
 
 import '../ShopHome.css'
 
@@ -102,7 +108,7 @@ export function ProductPage({ products }: ProductPageProps) {
   const ctaRef = useRef<HTMLButtonElement | null>(null)
   const quickOrderRef = useRef<HTMLElement | null>(null)
   const [stickyCta, setStickyCta] = useState(false)
-  const [bundleQty, setBundleQty] = useState<1 | 2 | 3>(1)
+  const [bundleQty, setBundleQty] = useState<1 | BundleQty>(1)
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [reviews, setReviews] = useState<ProductReview[]>([])
   const [reviewAuthor, setReviewAuthor] = useState('')
@@ -240,11 +246,14 @@ export function ProductPage({ products }: ProductPageProps) {
   const bundleOptions = useMemo(() => {
     if (!listedProduct) return []
     type BundleOption = {
-      qty: 1 | 2 | 3
+      qty: 1 | BundleQty
       title: string
       badge?: 'popular' | 'best'
       total: number
+      /** Prețul de listă tăiat (antetul de preț de deasupra opțiunilor). */
       compareAtTotal: number | null
+      /** Cât ar costa aceeași cantitate la prețul unui singur pachet. */
+      singlesTotal: number
     }
     const compareAtUnit = productCompareAtPrice(listedProduct)
     const out: BundleOption[] = [
@@ -253,9 +262,10 @@ export function ProductPage({ products }: ProductPageProps) {
         title: isPromotionalPackName(listedProduct.name) ? '1 pachet' : '1 bucată',
         total: listedProduct.salePrice,
         compareAtTotal: compareAtUnit,
+        singlesTotal: listedProduct.salePrice,
       },
     ]
-    for (const qty of [2, 3] as const) {
+    for (const qty of BUNDLE_QTYS) {
       const offer = bundleOfferForQty(listedProduct, qty)
       const total = bundleTotalPrice(listedProduct, qty)
       if (!offer || total === null) continue
@@ -264,11 +274,12 @@ export function ProductPage({ products }: ProductPageProps) {
         title:
           offer.title?.trim() ||
           (isPromotionalPackName(listedProduct.name)
-            ? `${qty} pachete promoționale`
+            ? `${qty} pachete`
             : `Pachet ${qty} bucăți`),
         badge: offer.badge,
         total,
         compareAtTotal: compareAtUnit !== null ? compareAtUnit * qty : null,
+        singlesTotal: Math.round(listedProduct.salePrice * qty * 100) / 100,
       })
     }
     return out
@@ -281,7 +292,11 @@ export function ProductPage({ products }: ProductPageProps) {
 
   const selectedBundle = bundleOptions.find((o) => o.qty === bundleQty) ?? bundleOptions[0]
   const selectedTotal = selectedBundle?.total ?? (listedProduct?.salePrice ?? 0)
-  const selectedCompareAt = selectedBundle?.compareAtTotal ?? null
+  // La 2+ pachete antetul arată aceeași reducere ca rândul ales (față de prețul unui pachet).
+  const selectedCompareAt =
+    selectedBundle && selectedBundle.qty > 1
+      ? selectedBundle.singlesTotal
+      : (selectedBundle?.compareAtTotal ?? null)
   const selectedPerUnit = bundleQty > 0 ? Math.round((selectedTotal / bundleQty) * 100) / 100 : selectedTotal
   const selectedSavePct =
     selectedCompareAt !== null
@@ -392,6 +407,7 @@ export function ProductPage({ products }: ProductPageProps) {
   const rawDescription = listedProduct?.description?.trim() ?? ''
   const descriptionBlocks = rawDescription ? htmlToBlocks(rawDescription) : []
   const descriptionIsHtml = looksLikeHtml(rawDescription)
+  const descriptionIsLanding = isLandingDescription(rawDescription)
 
   const applySelectedQtyToCart = () => {
     const requestedQty = Math.floor(bundleQty)
@@ -655,7 +671,9 @@ export function ProductPage({ products }: ProductPageProps) {
                 {bundleOptions.map((opt) => {
                   const disabled = stock > 0 ? opt.qty > stock : true
                   const active = opt.qty === bundleQty
-                  const was = opt.compareAtTotal
+                  // Reducerea din rând se raportează la prețul unui singur pachet
+                  // (ex. 2 pachete = încă 10%), nu la prețul de listă tăiat.
+                  const was = opt.qty > 1 ? opt.singlesTotal : null
                   const save = was !== null && was > opt.total ? was - opt.total : null
                   const savePct =
                     was !== null ? savingsPercent(was, opt.total) : null
@@ -680,18 +698,15 @@ export function ProductPage({ products }: ProductPageProps) {
                               {opt.badge === 'best' ? 'Best deal' : 'Popular'}
                             </span>
                           ) : null}
+                          {savePct !== null ? (
+                            <span className="shop-bundle__pct">−{savePct}%</span>
+                          ) : null}
                         </span>
-                        <span className="shop-bundle__sub muted">
-                          {opt.qty === 1
-                            ? savePct !== null
-                              ? `−${savePct}% față de prețul întreg`
-                              : 'Preț standard'
-                            : savePct !== null
-                              ? `−${savePct}%${save !== null ? ` · Economisești ${formatRon(save)}` : ''}`
-                              : save !== null
-                                ? `Economisești ${formatRon(save)}`
-                                : 'Ofertă bundle'}
-                        </span>
+                        {active && opt.qty > 1 && save !== null ? (
+                          <span className="shop-bundle__sub muted">
+                            Economisești {formatRon(save)}
+                          </span>
+                        ) : null}
                       </span>
                       <span className="shop-bundle__price">
                         <span className="shop-bundle__price-now">{formatRon(opt.total)}</span>
@@ -743,8 +758,17 @@ export function ProductPage({ products }: ProductPageProps) {
               Comandă acum
             </button>
             <p className="shop-product__cta-sub">
-              Completează formularul de mai jos · ramburs sau card online
+              Plătești la curier, când primești coletul
             </p>
+            <a
+              className="shop-product__call"
+              href={`tel:${SITE_LEGAL.contactPhone.replace(/\s+/g, '')}`}
+            >
+              Sau comandă la telefon:{' '}
+              <strong className="shop-product__call-number">
+                {SITE_LEGAL.returnPhone}
+              </strong>
+            </a>
             <button
               type="button"
               className="shop-btn shop-btn--ghost shop-btn--block shop-product__checkout-btn"
@@ -754,34 +778,38 @@ export function ProductPage({ products }: ProductPageProps) {
               Adaugă în coș
             </button>
 
-            <div className="shop-product__cart-links">
-              <Link className="shop-product__cart-link" to="/cos">
-                Vezi coșul
-                {cartHasItems ? ` (${cartLines.reduce((n, l) => n + l.quantity, 0)})` : ''}
-              </Link>
-              <span className="shop-product__cart-sep" aria-hidden>
-                |
-              </span>
-              <Link
-                className="shop-product__cart-link shop-product__cart-link--strong"
-                to="/checkout"
-              >
-                Finalizează comanda
-              </Link>
-            </div>
-            {!cartHasItems ? (
-              <p className="shop-product__cart-hint muted">
-                Adaugă produse în coș înainte de finalizare. Coșul gol te duce la mesaj pe
-                pagina de checkout.
-              </p>
+            {/* Linkurile de coș apar doar când există ceva în coș — altfel duc la pagini goale. */}
+            {cartHasItems ? (
+              <div className="shop-product__cart-links">
+                <Link className="shop-product__cart-link" to="/cos">
+                  Vezi coșul ({cartLines.reduce((n, l) => n + l.quantity, 0)})
+                </Link>
+                <span className="shop-product__cart-sep" aria-hidden>
+                  |
+                </span>
+                <Link
+                  className="shop-product__cart-link shop-product__cart-link--strong"
+                  to="/checkout"
+                >
+                  Finalizează comanda
+                </Link>
+              </div>
             ) : null}
           </div>
         </div>
 
         <div className="shop-product__details">
           {rawDescription ? (
-            <section className="shop-product__panel" aria-labelledby="product-description">
-              <h2 id="product-description">Descriere</h2>
+            <section
+              className={`shop-product__panel${descriptionIsLanding ? ' shop-product__panel--landing' : ''}`}
+              aria-labelledby="product-description"
+            >
+              <h2
+                id="product-description"
+                className={descriptionIsLanding ? 'sr-only' : undefined}
+              >
+                Descriere
+              </h2>
               {descriptionIsHtml ? (
                 <div
                   className="shop-rich"
@@ -811,7 +839,7 @@ export function ProductPage({ products }: ProductPageProps) {
             </section>
           ) : null}
 
-          {content.specs.length > 0 ? (
+          {content.specs.length > 0 && !descriptionIsLanding ? (
             <section className="shop-product__panel" aria-labelledby="product-specs">
               <h2 id="product-specs">Specificații</h2>
               <table className="shop-product__specs">
@@ -930,7 +958,7 @@ export function ProductPage({ products }: ProductPageProps) {
 
         {stock > 0 && typeof document !== 'undefined'
           ? createPortal(
-              <div className="shop-sticky-cta-root shop--dark shop--product-lp">
+              <div className="shop-sticky-cta-root shop--light shop--product-lp">
                 <div
                   className={`shop-product__sticky-cta${stickyCta ? ' show' : ''}`}
                   role="region"

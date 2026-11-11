@@ -792,7 +792,7 @@ function shoptop_normalize_bundle_offers(mixed $input): ?array
 
         $qtyRaw = $item['qty'] ?? null;
         $qty = is_numeric($qtyRaw) ? (int) floor((float) $qtyRaw) : 0;
-        if (!in_array($qty, [2, 3], true)) {
+        if (!in_array($qty, [2, 3, 4], true)) {
             continue;
         }
 

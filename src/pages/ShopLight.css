@@ -1,0 +1,840 @@
+/* Temă deschisă pentru magazin (.shop--light) — contrast mare și text mai mare,
+   gândită pentru clienți în vârstă, pe telefon. Se încarcă după ShopHome.css și
+   doar suprascrie culorile / dimensiunile; revenirea la tema închisă = clasa
+   shop--dark în ShopLayout.tsx și ProductPage.tsx. */
+
+.shop.shop--light,
+.shop-sticky-cta-root.shop--light {
+  color-scheme: light;
+  --shop-green: #0a7a55;
+  --shop-green-hover: #086446;
+  --shop-surface: #ffffff;
+  --shop-text: #1b1f1d;
+  --shop-muted: #4f5a55;
+  --shop-border: #d9ddd6;
+  --shop-input-bg: #ffffff;
+  --shop-input-text: #1b1f1d;
+  --shop-page-bg: #f6f4ee;
+  --lp-green: #0a7a55;
+  --lp-green-dark: #075c40;
+  --lp-green-soft: #e4f3ec;
+  --lp-green-line: #b9dccb;
+  --lp-red: #d0211c;
+  --lp-red-dark: #a8160f;
+  --lp-ink: #1b1f1d;
+  --lp-muted: #4f5a55;
+  --lp-bg: #f6f4ee;
+  --lp-card: #ffffff;
+  --lp-hero-card: #ffffff;
+  --lp-hero-card-line: #e3e6df;
+  --lp-line: #dfe3dc;
+  --lp-shadow: 0 6px 20px rgba(30, 40, 35, 0.08);
+}
+
+.shop.shop--light {
+  background: var(--shop-page-bg);
+  color: var(--shop-text);
+}
+
+.shop.shop--light .shop-main {
+  background: var(--shop-page-bg);
+}
+
+.shop.shop--light .shop-main::before {
+  display: none;
+}
+
+/* ——— Hero ——— */
+.shop.shop--light .shop-hero {
+  color: var(--shop-text);
+  background-color: #e9f5ee;
+  background-image: linear-gradient(180deg, #e2f2e9 0%, #f6f4ee 100%);
+  border-bottom: 1px solid var(--shop-border);
+}
+
+.shop.shop--light .shop-hero::before,
+.shop.shop--light .shop-hero::after {
+  display: none;
+}
+
+.shop.shop--light .shop-hero__title {
+  color: #0d3b2b;
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  filter: none;
+}
+
+.shop.shop--light .shop-hero__lead {
+  color: #2f3a35;
+}
+
+/* `.shop a { color: inherit }` bate `.shop-btn--primary`; pe fundal deschis ar ieși text închis. */
+.shop.shop--light a.shop-btn--primary {
+  color: #ffffff;
+}
+
+/* ——— Catalog + cele mai vândute ——— */
+.shop.shop--light .shop-bestsellers,
+.shop.shop--light .shop-catalog {
+  background: var(--shop-page-bg);
+  border-bottom: 1px solid var(--shop-border);
+  color: var(--shop-text);
+  --shop-border: #d9ddd6;
+  --shop-input-bg: #ffffff;
+  --shop-input-text: #1b1f1d;
+  --shop-muted: #4f5a55;
+  --shop-text: #1b1f1d;
+  --shop-surface: #ffffff;
+}
+
+.shop.shop--light .shop-bestsellers::before,
+.shop.shop--light .shop-catalog::before {
+  display: none;
+}
+
+.shop.shop--light .shop-bestsellers__title,
+.shop.shop--light .shop-catalog__title {
+  color: #0d3b2b;
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  filter: none;
+}
+
+.shop.shop--light .shop-catalog__count {
+  color: var(--shop-muted);
+}
+
+.shop.shop--light .shop-catalog__pill {
+  background: #ffffff;
+  color: #075c40;
+  border-color: #b9dccb;
+  box-shadow: none;
+}
+
+.shop.shop--light .shop-catalog__pill--accent {
+  background: var(--shop-green);
+  color: #ffffff;
+  border-color: var(--shop-green);
+  box-shadow: none;
+}
+
+.shop.shop--light .shop-catalog__toolbar .shop-field:has(select)::after {
+  border-color: #1b1f1d;
+}
+
+.shop.shop--light .shop-catalog .shop-card,
+.shop.shop--light .shop-card,
+.shop.shop--light .shop-card.shop-card--rail {
+  background: #ffffff;
+  color: var(--shop-text);
+  border-color: #d9ddd6;
+  box-shadow: 0 2px 10px rgba(30, 40, 35, 0.07);
+}
+
+.shop.shop--light .shop-catalog .shop-card:hover,
+.shop.shop--light .shop-bestsellers .shop-card.shop-card--rail:hover {
+  border-color: var(--shop-green);
+  box-shadow: 0 8px 24px rgba(30, 40, 35, 0.12);
+}
+
+.shop.shop--light .shop-card__media,
+.shop.shop--light .shop-catalog .shop-card__media,
+.shop.shop--light .shop-cart__media,
+.shop.shop--light .shop-cart__placeholder {
+  background: #f1f2ee;
+}
+
+.shop.shop--light .shop-bestsellers__arrow {
+  background: #ffffff;
+  color: #1b1f1d;
+  border-color: #c9cec6;
+  box-shadow: 0 2px 8px rgba(30, 40, 35, 0.15);
+  backdrop-filter: none;
+}
+
+.shop.shop--light .shop-bestsellers__arrow:hover:not(:disabled) {
+  background: var(--lp-green-soft);
+  border-color: var(--shop-green);
+  color: #075c40;
+  box-shadow: 0 2px 8px rgba(30, 40, 35, 0.15);
+}
+
+/* ——— Pagina de produs (landing) ——— */
+.shop.shop--light.shop--product-lp .shop-main {
+  background: var(--shop-page-bg);
+}
+
+.shop.shop--light.shop--product-lp .shop-product {
+  color: var(--lp-ink);
+}
+
+.shop.shop--light.shop--product-lp .shop-product__breadcrumbs {
+  color: var(--lp-muted);
+}
+
+.shop.shop--light.shop--product-lp .shop-product__breadcrumbs a,
+.shop.shop--light.shop--product-lp .shop-product__cart-link {
+  color: var(--lp-green-dark);
+}
+
+.shop.shop--light.shop--product-lp .shop-product__hero {
+  box-shadow: var(--lp-shadow);
+}
+
+.shop.shop--light.shop--product-lp .shop-product__main-media,
+.shop.shop--light.shop--product-lp .shop-product__thumb {
+  background: #f1f2ee;
+}
+
+.shop.shop--light.shop--product-lp .shop-product__sku--lp,
+.shop.shop--light.shop--product-lp .shop-product__reviews-muted,
+.shop.shop--light.shop--product-lp .shop-product__reviews-sep,
+.shop.shop--light.shop--product-lp .shop-product__stock-qty,
+.shop.shop--light.shop--product-lp .shop-product__cta-sub,
+.shop.shop--light.shop--product-lp .shop-product__mini-trust {
+  color: var(--lp-muted);
+}
+
+.shop.shop--light.shop--product-lp .shop-product__title--lp,
+.shop.shop--light.shop--product-lp .shop-product__reviews-score,
+.shop.shop--light.shop--product-lp .shop-product__highlights--lp li {
+  color: var(--lp-ink);
+}
+
+.shop.shop--light.shop--product-lp .shop-product__reviews-score strong,
+.shop.shop--light.shop--product-lp .shop-product__highlight-icon {
+  color: var(--lp-green-dark);
+}
+
+.shop.shop--light.shop--product-lp .shop-stars {
+  --shop-star-active: #f5a300;
+  --shop-star-inactive: #d1d5db;
+}
+
+.shop.shop--light.shop--product-lp .shop-product__reviews-pill {
+  color: var(--lp-green-dark);
+  background: var(--lp-green-soft);
+  border-color: var(--lp-green-line);
+}
+
+.shop.shop--light.shop--product-lp .shop-product__promo-timer {
+  color: var(--lp-ink);
+  background: #fff4e0;
+  border-color: #f2cf94;
+}
+
+.shop.shop--light.shop--product-lp .shop-product__stock-bar {
+  background: #e3e6df;
+}
+
+.shop.shop--light.shop--product-lp .shop-product__mini-trust-ic {
+  background: var(--lp-green-soft);
+}
+
+.shop-sticky-cta-root.shop--light {
+  --shop-muted: #4f5a55;
+}
+
+/* Codul SKU nu ajută clientul pe landing. */
+.shop.shop--light.shop--product-lp .shop-product__sku--lp {
+  display: none;
+}
+
+/* ——— Comandă prin telefon: o linie discretă, nu un al doilea buton ——— */
+.shop-product__call {
+  display: block;
+  margin: 0.35rem 0 0.6rem;
+  text-align: center;
+  font-size: 0.92rem;
+  text-decoration: none;
+  color: var(--lp-muted, #4f5a55) !important;
+}
+
+.shop-product__call-number {
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--lp-green-dark, #075c40);
+}
+
+/* ——— Formular comandă rapidă: mai scurt, câmpuri mari ——— */
+.shop.shop--light .shop-quick-order {
+  gap: 0.75rem;
+  background: #ffffff;
+  border-color: var(--lp-green-line);
+  box-shadow: var(--lp-shadow);
+}
+
+.shop.shop--light .shop-quick-order__title {
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+
+.shop.shop--light .shop-quick-order__lead {
+  font-size: 1rem;
+}
+
+.shop.shop--light .shop-quick-order .shop-field > span:first-child {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--shop-text);
+}
+
+/* 16px+ pe input: iOS nu mai face zoom la focus */
+.shop.shop--light .shop-quick-order .shop-field input,
+.shop.shop--light .shop-quick-order .shop-field select {
+  min-height: 3.2rem;
+  font-size: 1.1rem;
+  border-color: #aeb6ac;
+  border-radius: 10px;
+}
+
+.shop.shop--light .shop-quick-order .shop-field input:focus,
+.shop.shop--light .shop-quick-order .shop-field select:focus {
+  outline: none;
+  border-color: var(--shop-green);
+  box-shadow: 0 0 0 3px rgba(10, 122, 85, 0.22);
+}
+
+.shop.shop--light .shop-quick-order__extras {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  font-size: 0.98rem;
+}
+
+.shop.shop--light .shop-quick-order__extras .shop-link-btn {
+  min-height: 2.5rem;
+  font-weight: 700;
+  color: var(--lp-green-dark);
+}
+
+.shop.shop--light .shop-quick-order__company-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  color: var(--shop-muted);
+  cursor: pointer;
+}
+
+.shop.shop--light .shop-quick-order__company-toggle input {
+  width: 1.2rem;
+  height: 1.2rem;
+  accent-color: var(--shop-green);
+}
+
+.shop.shop--light .shop-quick-order__bumps {
+  gap: 0.45rem;
+  margin: 0;
+}
+
+.shop.shop--light .shop-quick-order__bumps .shop-checkout__bumps-title {
+  font-size: 0.9rem;
+  color: var(--shop-muted);
+}
+
+.shop.shop--light .shop-quick-order__bumps .shop-checkout__bump {
+  padding: 0.6rem 0.75rem;
+  border-width: 1px;
+  border-color: var(--shop-border);
+  background: #ffffff;
+}
+
+.shop.shop--light .shop-quick-order__bumps .shop-checkout__bump--active {
+  border-color: var(--shop-green);
+  background: var(--lp-green-soft);
+  box-shadow: 0 0 0 1px var(--shop-green) inset;
+}
+
+.shop.shop--light .shop-quick-order__bumps .shop-checkout__bump input[type='checkbox'] {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.shop.shop--light .shop-quick-order__bumps .shop-checkout__bump-hint {
+  font-size: 0.9rem;
+  color: var(--shop-muted);
+}
+
+.shop.shop--light .shop-quick-order__bumps .shop-checkout__bump-head strong {
+  color: var(--shop-text);
+}
+
+.shop.shop--light .shop-quick-order__bumps .shop-checkout__bump-price {
+  color: var(--lp-green-dark);
+}
+
+.shop.shop--light .shop-quick-order__payment {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  gap: 0.45rem;
+}
+
+.shop.shop--light .shop-quick-order__payment .shop-payment__option {
+  align-items: center;
+  min-height: 3.2rem;
+  font-size: 1.02rem;
+  border-color: #aeb6ac;
+  background: #ffffff;
+}
+
+.shop.shop--light .shop-quick-order__payment .shop-payment__option--active {
+  border-color: var(--shop-green);
+  background: var(--lp-green-soft);
+}
+
+.shop.shop--light .shop-quick-order__payment .shop-payment__option input[type='radio'] {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0;
+  accent-color: var(--shop-green);
+}
+
+.shop.shop--light .shop-quick-order__summary-row--total {
+  font-size: 1.15rem;
+}
+
+.shop.shop--light .shop-quick-order__summary-row--total strong {
+  font-size: 1.45rem;
+  color: var(--lp-red);
+}
+
+.shop.shop--light .shop-quick-order__terms {
+  font-size: 0.98rem;
+}
+
+.shop.shop--light .shop-quick-order__terms input[type='checkbox'] {
+  width: 1.35rem;
+  height: 1.35rem;
+  accent-color: var(--shop-green);
+}
+
+.shop.shop--light .shop-quick-order__submit {
+  min-height: 3.75rem;
+  font-size: 1.25rem;
+  font-weight: 800;
+  border-radius: 999px;
+  box-shadow: 0 10px 24px rgba(10, 122, 85, 0.3);
+}
+
+.shop.shop--light .shop-quick-order__note {
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.shop.shop--light .shop-quick-order__note a {
+  color: var(--lp-green-dark);
+  text-decoration: underline;
+}
+
+/* Iconițe în câmpuri + fundal gri deschis: câmpul se vede clar ca „loc de scris” */
+.shop.shop--light .shop-quick-order__grid {
+  gap: 0.55rem 0.6rem;
+}
+
+.shop.shop--light .shop-quick-order .shop-field {
+  gap: 0.2rem;
+}
+
+.shop.shop--light .shop-quick-order .shop-field input,
+.shop.shop--light .shop-quick-order .shop-field select {
+  min-height: 3rem;
+  background-color: #f5f6f8;
+  box-shadow: 0 2px 4px rgba(30, 40, 35, 0.12);
+}
+
+.shop.shop--light .shop-quick-order .shop-field--ico input,
+.shop.shop--light .shop-quick-order .shop-field--ico select {
+  padding-left: 2.7rem;
+  background-repeat: no-repeat;
+  background-position: 0.8rem center;
+  background-size: 1.25rem 1.25rem;
+}
+
+.shop.shop--light .shop-quick-order .shop-field--ico-user input {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%231b1f1d' d='M12 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9zm0 2c-4.4 0-8 2.2-8 5v2h16v-2c0-2.8-3.6-5-8-5z'/%3E%3C/svg%3E");
+}
+
+.shop.shop--light .shop-quick-order .shop-field--ico-phone input {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%231b1f1d' d='M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25c1.1.37 2.3.57 3.6.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z'/%3E%3C/svg%3E");
+}
+
+.shop.shop--light .shop-quick-order .shop-field--ico-home input {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%231b1f1d' d='M12 3 3 10.5V21h6.5v-6h5v6H21V10.5z'/%3E%3C/svg%3E");
+}
+
+/* Select: iconiță în stânga + săgeată în dreapta */
+.shop.shop--light .shop-quick-order .shop-field--ico-pin select {
+  padding-right: 2.4rem;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%231b1f1d' d='M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%231b1f1d' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+  background-position:
+    0.8rem center,
+    right 0.6rem center;
+  background-size:
+    1.25rem 1.25rem,
+    1.5rem 1.5rem;
+}
+
+.shop.shop--light .shop-quick-order .shop-field__hint {
+  margin-top: 0.15rem;
+  font-size: 0.85rem;
+}
+
+/* Opțiunile plătite: un rând fiecare; explicația apare doar la cea bifată */
+.shop.shop--light .shop-quick-order__bumps .shop-checkout__bump {
+  align-items: center;
+  padding: 0.5rem 0.7rem;
+}
+
+.shop.shop--light .shop-quick-order__bumps .shop-checkout__bump:not(.shop-checkout__bump--active) .shop-checkout__bump-hint {
+  display: none;
+}
+
+.shop.shop--light .shop-quick-order__bumps .shop-checkout__bump-head {
+  flex-wrap: nowrap;
+  font-size: 0.98rem;
+}
+
+.shop.shop--light .shop-quick-order__bumps .shop-checkout__bump-body {
+  flex: 1;
+}
+
+.shop.shop--light .shop-quick-order__submit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.1rem;
+  line-height: 1.2;
+  animation: shop-submit-pulse 2.2s ease-in-out infinite;
+}
+
+/* Pulsație blândă: un inel verde care se stinge + o ușoară mărire. Fără clipit
+   agresiv — obosește ochii și la vârstnici arată a reclamă înșelătoare. */
+@keyframes shop-submit-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow:
+      0 10px 24px rgba(10, 122, 85, 0.3),
+      0 0 0 0 rgba(10, 122, 85, 0.45);
+  }
+  50% {
+    transform: scale(1.025);
+    box-shadow:
+      0 10px 24px rgba(10, 122, 85, 0.3),
+      0 0 0 12px rgba(10, 122, 85, 0);
+  }
+}
+
+.shop.shop--light .shop-quick-order__submit:disabled,
+.shop.shop--light .shop-quick-order__submit:active {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shop.shop--light .shop-quick-order__submit {
+    animation: none;
+  }
+}
+
+.shop-quick-order__submit-sub {
+  font-size: 0.9rem;
+  font-weight: 600;
+  opacity: 0.92;
+}
+
+/* Coloana cardului nu are voie să se lățească după conținut (pe ecrane de 360px
+   rândurile de pachete împingeau tot cardul în afara ecranului). */
+@media (max-width: 880px) {
+  .shop.shop--light.shop--product-lp .shop-product__hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.shop.shop--light.shop--product-lp .shop-product__gallery,
+.shop.shop--light.shop--product-lp .shop-product__buybox,
+.shop.shop--light.shop--product-lp .shop-bundle__main {
+  min-width: 0;
+}
+
+/* ——— Pachete 1/2/3: un rând fiecare ——— */
+.shop.shop--light.shop--product-lp .shop-bundle {
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.shop.shop--light.shop--product-lp .shop-bundle__option {
+  padding: 0.55rem 0.75rem;
+  gap: 0.6rem;
+  border-width: 2px;
+  border-radius: 12px;
+}
+
+.shop.shop--light.shop--product-lp .shop-bundle__option.is-active {
+  background: var(--lp-green-soft);
+}
+
+.shop.shop--light.shop--product-lp .shop-bundle__title {
+  flex-wrap: wrap;
+  gap: 0.2rem 0.45rem;
+  font-size: 1.08rem;
+  line-height: 1.2;
+}
+
+.shop-bundle__pct {
+  display: inline-flex;
+  padding: 0.12rem 0.45rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  background: var(--lp-red, #d0211c);
+  color: #ffffff;
+}
+
+.shop.shop--light.shop--product-lp .shop-bundle__sub {
+  font-size: 0.9rem;
+  color: var(--lp-green-dark);
+  font-weight: 700;
+}
+
+.shop.shop--light.shop--product-lp .shop-bundle__price {
+  gap: 0;
+  white-space: nowrap;
+}
+
+/* Textul „2 pachete” nu se rupe; pe ecrane înguste eticheta −10% coboară sub el. */
+.shop.shop--light.shop--product-lp .shop-bundle__title {
+  flex-wrap: wrap;
+  white-space: nowrap;
+}
+
+.shop.shop--light.shop--product-lp .shop-bundle {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.shop.shop--light.shop--product-lp .shop-bundle__option {
+  min-width: 0;
+}
+
+.shop.shop--light.shop--product-lp .shop-bundle__price-now {
+  font-size: 1.15rem;
+}
+
+.shop.shop--light.shop--product-lp .shop-bundle__price-was {
+  font-size: 0.88rem;
+}
+
+@media (max-width: 720px) {
+  /* Strada și numărul pe același rând: un rând mai puțin de derulat */
+  .shop.shop--light .shop-quick-order__grid {
+    grid-template-columns: minmax(0, 1fr) 6rem;
+  }
+
+  .shop.shop--light .shop-quick-order__grid > * {
+    grid-column: 1 / -1;
+  }
+
+  .shop.shop--light .shop-quick-order__grid .shop-field--street {
+    grid-column: 1 / 2;
+  }
+
+  .shop.shop--light .shop-quick-order__grid .shop-field--number {
+    grid-column: 2 / 3;
+  }
+}
+
+/* Descrierile vechi (HTML lipit) moșteneau text alb pentru fundalul închis. */
+.shop.shop--light .shop-rich,
+.shop.shop--light .shop-rich > div {
+  color: var(--shop-text) !important;
+}
+
+/* ——— Checkout ——— */
+.shop.shop--light .shop-page--checkout .shop-page__title {
+  color: #0d3b2b;
+  background: none;
+  -webkit-text-fill-color: currentColor;
+}
+
+.shop.shop--light .shop-page--checkout .shop-page__lead,
+.shop.shop--light .shop-page--checkout .muted,
+.shop.shop--light .shop-page--checkout .shop-field > .shop-field__hint,
+.shop.shop--light .shop-page--checkout .shop-checkout__bump-hint,
+.shop.shop--light .shop-page--checkout .shop-summary__note {
+  color: var(--shop-muted);
+}
+
+.shop.shop--light .shop-page--checkout .shop-checkout > .shop-form,
+.shop.shop--light .shop-page--checkout .shop-summary {
+  background: #ffffff;
+  border-color: var(--shop-border);
+  box-shadow: var(--lp-shadow);
+}
+
+.shop.shop--light .shop-page--checkout .shop-summary__title,
+.shop.shop--light .shop-page--checkout .shop-field > span,
+.shop.shop--light .shop-page--checkout .shop-checkout__delivery-note strong,
+.shop.shop--light .shop-page--checkout .shop-checkout__bumps-title,
+.shop.shop--light .shop-page--checkout .shop-checkout__bump-head strong,
+.shop.shop--light .shop-page--checkout .shop-payment__legend,
+.shop.shop--light .shop-page--checkout .shop-field.shop-field--checkbox span {
+  color: var(--shop-text);
+}
+
+.shop.shop--light .shop-page--checkout .shop-field input,
+.shop.shop--light .shop-page--checkout .shop-field textarea,
+.shop.shop--light .shop-page--checkout .shop-field select {
+  background: #ffffff;
+  border-color: #b9c0b7;
+  color: var(--shop-text);
+}
+
+.shop.shop--light .shop-page--checkout .shop-field input:focus,
+.shop.shop--light .shop-page--checkout .shop-field textarea:focus,
+.shop.shop--light .shop-page--checkout .shop-field select:focus {
+  border-color: var(--shop-green);
+  box-shadow: 0 0 0 3px rgba(10, 122, 85, 0.2);
+}
+
+.shop.shop--light .shop-page--checkout .shop-checkout__delivery-note {
+  border-color: var(--lp-green-line);
+  background: var(--lp-green-soft);
+}
+
+.shop.shop--light .shop-page--checkout .shop-checkout__bump {
+  border-color: var(--lp-green-line);
+  background: #f4faf7;
+}
+
+.shop.shop--light .shop-page--checkout .shop-checkout__bump:hover,
+.shop.shop--light .shop-page--checkout .shop-checkout__bump--active {
+  border-color: var(--shop-green);
+  background: var(--lp-green-soft);
+  box-shadow: 0 0 0 1px var(--shop-green) inset;
+}
+
+.shop.shop--light .shop-page--checkout .shop-checkout__bump-price,
+.shop.shop--light .shop-page--checkout .shop-summary__row--total strong,
+.shop.shop--light .shop-page--checkout .shop-field.shop-field--checkbox a {
+  color: var(--lp-green-dark);
+}
+
+.shop.shop--light .shop-page--checkout .shop-payment {
+  border-color: var(--shop-border);
+  background: transparent;
+}
+
+.shop.shop--light .shop-page--checkout .shop-payment__option {
+  border-color: #b9c0b7;
+  background: #ffffff;
+  color: var(--shop-text);
+}
+
+.shop.shop--light .shop-page--checkout .shop-payment__option--active {
+  border-color: var(--shop-green);
+  background: var(--lp-green-soft);
+  box-shadow: 0 0 0 1px var(--shop-green) inset;
+}
+
+.shop.shop--light .shop-page--checkout .shop-summary__item,
+.shop.shop--light .shop-page--checkout .shop-summary__row--total {
+  border-color: var(--shop-border);
+  color: var(--shop-text);
+}
+
+.shop.shop--light .shop-page--checkout .shop-btn--ghost {
+  background: #ffffff;
+  border-color: #b9c0b7;
+  color: var(--shop-text);
+}
+
+.shop.shop--light .shop-page--checkout .shop-btn--ghost:hover {
+  background: var(--lp-green-soft);
+  border-color: var(--shop-green);
+  color: var(--shop-text);
+}
+
+/* ——— Lizibilitate pe telefon: text și butoane mai mari ——— */
+@media (max-width: 720px) {
+  .shop.shop--light .shop-hero__title {
+    font-size: 1.85rem;
+  }
+
+  .shop.shop--light .shop-hero__lead {
+    font-size: 1.1rem;
+  }
+
+  .shop.shop--light .shop-btn {
+    min-height: 3.25rem;
+    font-size: 1.1rem;
+    font-weight: 700;
+  }
+
+  .shop.shop--light .shop-catalog__pill {
+    font-size: 0.82rem;
+  }
+
+  .shop.shop--light .shop-catalog__toolbar input,
+  .shop.shop--light .shop-catalog__toolbar select {
+    min-height: 3.1rem;
+    font-size: 1.05rem;
+  }
+
+  .shop.shop--light .shop-card__name {
+    font-size: 1.12rem;
+    line-height: 1.35;
+  }
+
+  .shop.shop--light .shop-card__hint,
+  .shop.shop--light .shop-card__sku {
+    font-size: 0.95rem;
+  }
+
+  .shop.shop--light.shop--product-lp .shop-product__price-note,
+  .shop.shop--light.shop--product-lp .shop-product__cta-sub,
+  .shop.shop--light.shop--product-lp .shop-product__cart-hint,
+  .shop.shop--light.shop--product-lp .shop-product__stock-row,
+  .shop.shop--light.shop--product-lp .shop-bundle__price-was {
+    font-size: 0.95rem;
+  }
+
+  .shop.shop--light.shop--product-lp .shop-product__reviews-score {
+    font-size: 1rem;
+  }
+
+  .shop.shop--light.shop--product-lp .shop-product__buybox .shop-stars {
+    --shop-star-size: 1.05rem;
+  }
+
+  .shop.shop--light.shop--product-lp .shop-product__reviews-pill {
+    font-size: 0.88rem;
+    padding: 0.3rem 0.7rem;
+  }
+
+  .shop.shop--light.shop--product-lp .shop-bundle__title {
+    font-size: 1.08rem;
+  }
+
+  .shop.shop--light.shop--product-lp .shop-bundle__price-now {
+    font-size: 1.15rem;
+  }
+
+  .shop.shop--light.shop--product-lp .shop-product__cta-lp {
+    min-height: 3.6rem;
+    font-size: 1.25rem;
+  }
+
+  .shop.shop--light.shop--product-lp .shop-product__mini-trust {
+    font-size: 0.85rem;
+  }
+
+  .shop.shop--light.shop--product-lp .shop-product__cart-links {
+    font-size: 1.02rem;
+  }
+}

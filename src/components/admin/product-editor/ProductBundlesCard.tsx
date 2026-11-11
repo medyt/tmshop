@@ -1,4 +1,4 @@
-import type { BundleOffer } from '../../../types/product'
+import { BUNDLE_QTYS, type BundleOffer, type BundleQty } from '../../../types/product'
 import { formatRon } from '../../../lib/shopCatalog'
 
 type Props = {
@@ -7,9 +7,7 @@ type Props = {
   onChange: (offers: BundleOffer[]) => void
 }
 
-const QTYS: Array<2 | 3> = [2, 3]
-
-function offerFor(offers: BundleOffer[], qty: 2 | 3, salePrice: number): BundleOffer {
+function offerFor(offers: BundleOffer[], qty: BundleQty, salePrice: number): BundleOffer {
   const existing = offers.find((o) => o.qty === qty)
   if (existing) {
     return {
@@ -36,9 +34,9 @@ function bundleTotal(offer: BundleOffer, salePrice: number): number | null {
   return Math.round(salePrice * offer.qty * (1 - pct / 100) * 100) / 100
 }
 
-/** Card „Pachete”: oferte 2 / 3 bucăți afișate pe pagina produsului. */
+/** Card „Pachete”: oferte 2 / 3 / 4 bucăți afișate pe pagina produsului. */
 export function ProductBundlesCard({ salePrice, offers, onChange }: Props) {
-  function patch(qty: 2 | 3, patchValue: Partial<BundleOffer>) {
+  function patch(qty: BundleQty, patchValue: Partial<BundleOffer>) {
     const prev = offerFor(offers, qty, salePrice)
     const next: BundleOffer = { ...prev, ...patchValue, qty }
     const without = offers.filter((o) => o.qty !== qty)
@@ -50,17 +48,18 @@ export function ProductBundlesCard({ salePrice, offers, onChange }: Props) {
       <header className="pe-card__head">
         <div>
           <h2 id="pe-bundles-title" className="pe-card__title">
-            Pachete (2 / 3 bucăți)
+            Pachete (2 / 3 / 4 bucăți)
           </h2>
           <p className="pe-card__lead">
             Opțiuni de cantitate cu preț total fix sau discount procentual, afișate
-            pe pagina produsului sub preț.
+            pe pagina produsului sub preț. Reducerea arătată clientului se
+            calculează față de prețul unei singure bucăți.
           </p>
         </div>
       </header>
 
       <div className="pe-bundles">
-        {QTYS.map((qty) => {
+        {BUNDLE_QTYS.map((qty) => {
           const offer = offerFor(offers, qty, salePrice)
           const total = bundleTotal(offer, salePrice)
           const base = salePrice * qty
